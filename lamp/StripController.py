@@ -26,7 +26,7 @@ class StripController:
         logger.debug(f"strips {self.strips}")
         logger.debug(f"shows {self.shows}")
 
-    def msg_handler(self, topic, payload):
+    async def msg_handler(self, topic, payload):
         logger.debug(f"Got msg {topic} {payload}")
         if not topic.startswith("named/control/lamp"):
             return False
@@ -37,9 +37,10 @@ class StripController:
         if topics[1] == "brightness":
             self.setBrightness(int(payload))
         elif topics[1] == "strip":
-            name = topics[2]
+            sname = topics[2]
             painter = topics[3]
-            self.shows[n].setPainter(painter, payload)
+            logger.debug(f"Set strip {sname} {painter}")
+            await self.shows[sname].setPainter(painter, payload.decode())
         return True
         
     def setBrightness(self, b):

@@ -69,10 +69,10 @@ class LampController:
             self.handlers.append(handler)
 
     def on_message(self, client, topic, payload, qos, properties):
+        tasks = list()
         for h in self.handlers:
-            if h(topic, payload):
-                return  # what if a message is interesting to many handlers?
-        logger.warning(f"Just in case: Unhandled message {topic} = {payload}")
+            tasks.append(h(topic, payload))
+        asyncio.gather(*tasks)
 
     def subscribe(self, topic):
         if topic not in self.subscriptions:

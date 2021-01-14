@@ -14,13 +14,13 @@ class StripShow:
 
     def __init__(self, strip):
         self.strip = strip
-        self.painter = "colorFade"
+        self.painter = "rainbowChase"
         self.running = True
         self.args = "0,0,255"
 
     def start(self):
         self.task = asyncio.create_task(self.show())
-
+        logger.debug(f"The show must go on. Let's {self.painter}")
 
     async def setPainter(self, painter, args):
         if self.painter != painter:
@@ -28,7 +28,7 @@ class StripShow:
             try:
                 await self.task
             except asyncio.CancelledError:
-                print("The show is over")
+                logger.debug(f"The {self.painter} show is over")
             self.painter = painter
             self.args = args
             self.start()
@@ -48,7 +48,16 @@ class StripShow:
         """Convert a 0-255 hue into a Color() """
         return Color(*([int(c * 255) for c in colorsys.hsv_to_rgb(h/255, 1, 1)]))
 
-    async def rainbowCycle2(self):
+    def setColorFromArgs(self):
+        if self.args is not None:
+            (r, g, b) = self.args.split(",")
+            logger.debug(f"set Color({r}, {g}, {b})")
+            self.color = Color(r, g, b)
+            self.args = None
+
+    ################################################################
+    # Painters
+    async def rainbowChase(self):
         """Draw rainbow that uniformly distributes itself across all pixels."""
         t = time.time() * 10
         for i in range(self.strip.numPixels()):
@@ -59,21 +68,8 @@ class StripShow:
 #        print(f"{t}")
         yield True
 
-    async def colorSet(self):
-        """Set the entire display to a color."""
-        if self.args is not None:
-            (r, g, b) = self.args.split(",")
-            self.color = Color(r, g, b)
-            self.args = None
-
-        for i in range(self.strip.numPixels()):
-            # print(f"{i}")
-            self.strip.setPixelColor(i, self.color)
-        yield True
-        self.running = False
-
-    async def colorFade(self):
-        """Set the entire display to a color."""
+    async def rainbowFade(self):
+        """Fade through all the colours of a Rainbow"""
         while True:
             t = time.time() * 10
             color = self.hue_to_rgb(t % 255)
@@ -83,55 +79,36 @@ class StripShow:
             yield True
             await asyncio.sleep(1/60)
 
+    async def solidColor(self):
+        """Set the entire display to a color."""
+        self.setColorFromArgs()
+        for i in range(self.strip.numPixels()):
+            # print(f"{i}")
+            self.strip.setPixelColor(i, self.color)
+        yield True
+        self.running = False
 
-    async def colorWipe(self, color, wait_ms=50):
+    async def solidColorWipe(self):
         """Wipe color across display a pixel at a time."""
+        self.setColorFromArgs()
         for i in range(self.strip.numPixels()):
             self.strip.setPixelColor(i, color)
             yield True
             await asyncio.sleep(wait_ms/1000.0)
         self.running = False
 
-    def theaterChase(self, color, wait_ms=50, iterations=10):
-        """Movie theater light style chaser animation."""
-        for j in range(iterations):
-            for q in range(3):
-                for i in range(0, self.strip.numPixels(), 3):
-                    self.strip.setPixelColor(i+q, color)
-                yield True
-                time.sleep(wait_ms/1000.0)
-                for i in range(0, self.strip.numPixels(), 3):
-                    self.strip.setPixelColor(i+q, 0)
-
-    def theaterChase2(self, color, wait_ms=50, iterations=20):
+    async def theaterChase(self):
         """Movie theater light style chaser animation."""
         line = 8
-        for j in range(iterations):
+        self.setColorFromArgs()
+        while True:
             for q in range(line):
                 for i in range(0, self.strip.numPixels(), line):
-                    self.strip.setPixelColor(i+q, color)
+                    self.strip.setPixelColor(i+q, self.color)
                 yield True
-                time.sleep(wait_ms/1000.0)
+                await asyncio.sleep(wait_ms/1000.0)
                 for i in range(0, self.strip.numPixels(), line):
                     self.strip.setPixelColor(i+q, 0)
-
-    def rainbow(self, wait_ms=20, iterations=1):
-        """Draw rainbow that fades across all pixels at once."""
-        for j in range(256*iterations):
-            for i in range(self.strip.numPixels()):
-                self.strip.setPixelColor(i, hue_to_rgb((i+j) & 255))
-            yield True
-            time.sleep(wait_ms/1000.0)
-
-    def rainbowCycle(self, wait_ms=20, iterations=5):
-        """Draw rainbow that uniformly distributes itself across all pixels."""
-        for j in range(256*iterations):
-            for i in range(self.strip.numPixels()):
-                self.strip.setPixelColor(
-                    i, self.hue_to_rgb(
-                        (int(i * 256 / self.strip.numPixels()) + j) & 255))
-            yield True
-            time.sleep(wait_ms/1000.0)
 
     def theaterChaseRainbow(self, wait_ms=50):
         """Rainbow movie theater light style chaser animation."""
