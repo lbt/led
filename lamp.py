@@ -2,7 +2,6 @@
 import asyncio
 import toml
 import os
-import asyncio
 import signal
 import logging
 import socket
