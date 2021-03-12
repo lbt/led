@@ -71,8 +71,10 @@ class LampController:
     def on_message(self, client, topic, payload, qos, properties):
         tasks = list()
         for h in self.handlers:
+            logger.debug(f"handler for {topic}")
             tasks.append(h(topic, payload))
         asyncio.gather(*tasks)
+        logger.debug(f"all handlers gathered for {topic}")
 
     def subscribe(self, topic):
         if topic not in self.subscriptions:
