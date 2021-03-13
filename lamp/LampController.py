@@ -12,6 +12,20 @@ logger = logging.getLogger(__name__)
 
 
 class LampController:
+    """Manages the Strips according to MQTT messages
+
+    LampController sets up an MQTT connection and listens for MQTT
+    messages.
+
+    Topics can be subscribed to and callback handlers registered.
+
+    It is stupid and calls all handlers for every message that is
+    received which is OK when there are very few. Each handler should
+    return ASAP after checking if the message is interesting.
+
+    It also provides a publish mechanism.
+
+    """
     def __init__(self, config):
         self.subscriptions = []
         self.handlers = []
@@ -25,13 +39,16 @@ class LampController:
         pass
 
     async def run(self):
+        """This connects to the mqtt (retrying forever) and waits until
+        :func:`ask_exit` is called at which point it exits cleanly.
+        """
         self.mqtt = MQTTClient(f"{socket.gethostname()}.{os.getpid()}")
         self.mqtt.set_auth_credentials(username=self.config["username"],
                                        password=self.config["password"])
 
-        self.mqtt.on_connect = self.on_connect
-        self.mqtt.on_message = self.on_message
-        self.mqtt.on_disconnect = self.on_disconnect
+        self.mqtt.on_connect = self._on_connect
+        self.mqtt.on_message = self._on_message
+        self.mqtt.on_disconnect = self._on_disconnect
 
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -53,7 +70,7 @@ class LampController:
             await self.setup_lamp()
         except Exception as e:
             logger.warning(f"Exception {e} thrown "
-                           f"creating sensors",
+                           f"creating {self.__class__}",
                            exc_info=True)
 
         await stop_event.wait()  # This will wait until the client is signalled
@@ -65,10 +82,11 @@ class LampController:
         logger.debug(f"client disconnected")
 
     def add_handler(self, handler):
+        """Register a handler to be called when *any* message is received"""
         if handler not in self.handlers:
             self.handlers.append(handler)
 
-    def on_message(self, client, topic, payload, qos, properties):
+    def _on_message(self, client, topic, payload, qos, properties):
         tasks = list()
         for h in self.handlers:
             logger.debug(f"handler for {topic}")
@@ -77,26 +95,29 @@ class LampController:
         logger.debug(f"all handlers gathered for {topic}")
 
     def subscribe(self, topic):
+        """Subscribes to an MQTT topic (passed directly to MQTT)"""
         if topic not in self.subscriptions:
             self.subscriptions.append(topic)
             logger.debug(f"Subscribing to {topic}")
             if self.mqtt:
                 self.mqtt.subscribe(topic)
 
-    def on_connect(self, client, flags, rc, properties):
+    def _on_connect(self, client, flags, rc, properties):
         for s in self.subscriptions:
             logger.debug(f"Re-subscribing to {s}")
             self.mqtt.subscribe(s)
         logger.debug('Connected and subscribed')
 
-    def on_disconnect(self, client, packet, exc=None):
+    def _on_disconnect(self, client, packet, exc=None):
         logger.debug('Disconnected')
 
     def publish(self, topic, payload, retain=True):
+        """Publish :param payload: to :param topic:"""
         logger.debug(f"Publishing {topic} = {payload}")
         self.mqtt.publish(topic, payload, qos=2, retain=True)
 
     def ask_exit(self, stop_event):
+        """Handle outstanding messages and cleanly disconnect""" 
         logger.warning("Client received signal and exiting")
         stop_event.set()
 

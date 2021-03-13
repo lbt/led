@@ -11,71 +11,101 @@ logger = logging.getLogger(__name__)
 
 
 class StripShow:
-    '''Define functions which animate LEDs in various ways.'''
+    '''Define various ways to animate LEDs in a SubStrip.
+
+    StripShow manages an internal task which runs show() forever.
+
+    show() calls the current painter on each iteration and then calls
+    strip.show() to actually update the strip.
+
+    The painter updates the LED values and pauses as needed,
+
+    Painters have access to the decoded message payload via the
+    self.args attribute
+
+    '''
+
+    class Painter:
+        """Helper class to hold private attributes for a painter
+        """
+        def __init__(self, args):
+            self.method = args["painter"]
+            self.args = args
+
+        def _as_payload(self):
+            return json.dumps(self.args, separators=(',', ':')).encode("utf-8")
+
+        def __repr__(self):
+            return self.method
 
     def __init__(self, controller, strip, name):
         self.controller = controller
         self.strip = strip
         self.name = name
-        self.painter = "rainbowChase"
+        self.painter = self.Painter({"painter": "rainbowChase"})
         self.running = True
         self.args = None
 
     def start(self):
         self.task = asyncio.create_task(self.show())
-        j = json.dumps(self.args, separators=(',', ':')).encode("utf-8")
-        logger.debug(f"strip/{self.name}/{self.painter} = {j}")
+        self.running = True
         logger.debug(f"The show must go on. Let's {self.painter}")
 
-    async def setPainter(self, painter, rawpayload):
-        logger.debug(f"setPainter({painter}, {rawpayload})")
+    async def setPainter(self, rawpayload):
+        """Sets the Painter using a json structure.
 
-        if not hasattr(self, painter):
-            logger.debug("setPainter: invalid painter: {painter}")
+        The raw payload is interpreted as a utf-8 json string
+        containing a hash with a 'painter' key and the args to the
+        particular painter.
+        """
+        logger.debug(f"setPainter({rawpayload})")
+        args = json.loads(rawpayload.decode("utf-8") or "null")
+        try:
+            method = args["painter"]
+        except (TypeError, KeyError):
+            logger.debug("No 'painter' found in payload")
             return
-        # handle empty string as {}
-        self.args = json.loads(rawpayload.decode("utf-8") or "null")
-            # if self.painter != painter:
-        if True:
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                logger.debug(f"The {self.painter} show is over")
-            self.painter = painter
-            self.running = True
-            self.start()
-        else:
-            # This won't work unless args is checked in the yielding loop
-            self.running = True  # One shot runners should run again
+        if not hasattr(self, method):
+            logger.debug("setPainter: invalid painter method: {method}")
+            return
+        self.task.cancel()
+        try:
+            await self.task
+        except asyncio.CancelledError:
+            logger.debug(f"The {self.painter} show is over")
+        # Now everything has stopped we can set the global painter and args
+        self.painter = self.Painter(args)
+        self.start()
 
-        self.controller.publish(f"strip/{self.name}/{self.painter}",
-                          json.dumps(self.args, separators=(',', ':')
-                          ).encode("utf-8"))
+        self.controller.publish(f"strip/{self.name}/painter",
+                                self.painter._as_payload())
 
     async def show(self):
         while True:
             if self.running:
-                async for frame in getattr(self, self.painter)():
+                async for frame in getattr(self, self.painter.method)():
                     self.strip.show()
             else:
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.1)
 
     def hue_to_rgb(self, h):
-        """Convert a 0-255 hue into a Colour() """
-        return Colour(*([int(c * 255) for c in colorsys.hsv_to_rgb(h/255, 1, 1)]))
+        """Utility function for Painters. Converts a 0-255 hue into a
+        Colour()"""
+        return Colour(*(
+            [int(c * 255) for c in colorsys.hsv_to_rgb(h/255, 1, 1)]))
 
     ################################################################
-    # Painters
+    # Painter functions
+
     async def rainbowChase(self):
         """Draw rainbow that uniformly distributes itself across all pixels."""
         t = time.time() * 10
-        for i in range(self.strip.numPixels()):
+        n = self.strip.numPixels()
+        for i in range(n):
             # Spread the Hue range over the pixels, but also cycle it over time
-            h = (i / self.strip.numPixels()) * 255  # scale to 0-255
+            h = (i / n) * 255  # scale to 0-255
             self.strip.setPixelColor(i, self.hue_to_rgb((t + h) % 255))
         await asyncio.sleep(1/60)
-#        print(f"{t}")
         yield True
 
     async def rainbowFade(self):
@@ -84,54 +114,65 @@ class StripShow:
             t = time.time() * 10
             colour = self.hue_to_rgb(t % 255)
             for i in range(self.strip.numPixels()):
-                #print(f"{colour}")
                 self.strip.setPixelColor(i, colour)
             yield True
             await asyncio.sleep(1/60)
 
     async def solidColour(self):
         """Set the entire display to a colour."""
-        if self.args is not None:
-            self.colour = Colour(*self.args["colour"])
-        else:
-            self.colour = Colour(255,0,0)
+        try:
+            colour = Colour(*self.painter.args["colour"])
+        except (KeyError, AttributeError):
+            colour = Colour(255, 0, 0)
         for i in range(self.strip.numPixels()):
-            # print(f"{i}")
-            self.strip.setPixelColor(i, self.colour)
-        yield True
+            self.strip.setPixelColor(i, colour)
+        # No need to run again
         self.running = False
+        yield True
 
     async def solidColourWipe(self):
         """Wipe colour across display a pixel at a time."""
-        wait_ms = 50
-        self.colour = Colour(*self.args["colour"])
+        wait_ms = self.painter.args.get("wait_ms", 50)
+        colour = Colour(*self.painter.args["colour"])
         for i in range(self.strip.numPixels()):
-            self.strip.setPixelColor(i, self.colour)
+            self.strip.setPixelColor(i, colour)
             yield True
             await asyncio.sleep(wait_ms/1000.0)
         self.running = False
 
     async def theaterChase(self):
         """Movie theater light style chaser animation."""
-        line = 8
-        wait_ms = 50
+        try:
+            reverse = self.painter.args.get("reverse", False)
+            line = self.painter.args.get("line_length", 8)
+            wait_ms = self.painter.args.get("wait_ms", 50)
+            colour = Colour(*self.painter.args.get("colour", (255, 0, 0)))
+        except Exception as e:
+            logger.error(f"Error handling theaterChase args: {e}")
+            self.running = False
+            return
+        num = self.strip.numPixels()
+        start = 0
+        end = num
         while True:
-            for q in range(line):
-                for i in range(0, self.strip.numPixels(), line):
-                    self.strip.setPixelColor(i+q, self.colour)
+            for q in range(abs(line)):
+                for i in range(start, end, line):
+                    self.strip.setPixelColor(i+q, colour)
                 yield True
                 await asyncio.sleep(wait_ms/1000.0)
-                for i in range(0, self.strip.numPixels(), line):
+                for i in range(start, end, line):
                     self.strip.setPixelColor(i+q, 0)
 
-    def theaterChaseRainbow(self):
+    async def theaterChaseRainbow(self):
         """Rainbow movie theater light style chaser animation."""
-        wait_ms = 50
+        line = self.painter.args.get("line_length", 8)
+        wait_ms = self.painter.args.get("wait_ms", 50)
+        num = self.strip.numPixels()
         for j in range(256):
-            for q in range(3):
-                for i in range(0, self.strip.numPixels(), 3):
-                    self.strip.setPixelColor(i+q, hue_to_rgb((i+j) % 255))
+            for q in range(line):
+                for i in range(0, num, line):
+                    self.strip.setPixelColor(i+q, self.hue_to_rgb((i+j) % 255))
                 yield True
-                time.sleep(wait_ms/1000.0)
-                for i in range(0, self.strip.numPixels(), 3):
+                await asyncio.sleep(wait_ms/1000.0)
+                for i in range(0, num, line):
                     self.strip.setPixelColor(i+q, 0)
