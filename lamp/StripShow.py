@@ -99,19 +99,34 @@ class StripShow:
 
     async def rainbowChase(self):
         """Draw rainbow that uniformly distributes itself across all pixels."""
-        t = time.time() * 10
+        try:
+            reverse = self.painter.args.get("reverse", False)
+            speed = self.painter.args.get("speed", 10)
+        except Exception as e:
+            logger.error(f"Error handling rainbowChase args: {e}")
+            self.running = False
+            return
         n = self.strip.numPixels()
-        for i in range(n):
-            # Spread the Hue range over the pixels, but also cycle it over time
-            h = (i / n) * 255  # scale to 0-255
-            self.strip.setPixelColor(i, self.hue_to_rgb((t + h) % 255))
-        await asyncio.sleep(1/60)
-        yield True
+        reverse = -1 if reverse else 1
+        while True:
+            t = time.time() * speed
+            for i in range(n):
+                # Spread the Hue range over the pixels, but also cycle it over time
+                h = (i / n) * 255  # scale to 0-255
+                self.strip.setPixelColor(i, self.hue_to_rgb((t + h * reverse) % 255))
+            await asyncio.sleep(1/60)
+            yield True
 
     async def rainbowFade(self):
         """Fade through all the colours of a Rainbow"""
+        try:
+            speed = self.painter.args.get("speed", 10)
+        except Exception as e:
+            logger.error(f"Error handling rainbowFade args: {e}")
+            self.running = False
+            return
         while True:
-            t = time.time() * 10
+            t = time.time() * speed
             colour = self.hue_to_rgb(t % 255)
             for i in range(self.strip.numPixels()):
                 self.strip.setPixelColor(i, colour)
