@@ -152,27 +152,35 @@ class StripShow:
             self.running = False
             return
         num = self.strip.numPixels()
-        start = 0
-        end = num
+        reverse = -1 if reverse else 1
         while True:
-            for q in range(abs(line)):
-                for i in range(start, end, line):
-                    self.strip.setPixelColor(i+q, colour)
+            for q in range(line):
+                for i in range(0, num, line):
+                    self.strip.setPixelColor(i+(q*reverse), colour)
                 yield True
                 await asyncio.sleep(wait_ms/1000.0)
-                for i in range(start, end, line):
-                    self.strip.setPixelColor(i+q, 0)
+                for i in range(0, num, line):
+                    self.strip.setPixelColor(i+(q*reverse), 0)
 
     async def theaterChaseRainbow(self):
         """Rainbow movie theater light style chaser animation."""
-        line = self.painter.args.get("line_length", 8)
-        wait_ms = self.painter.args.get("wait_ms", 50)
+        try:
+            reverse = self.painter.args.get("reverse", False)
+            line = self.painter.args.get("line_length", 8)
+            wait_ms = self.painter.args.get("wait_ms", 50)
+        except Exception as e:
+            logger.error(f"Error handling theaterChaseRainbow args: {e}")
+            self.running = False
+            return
         num = self.strip.numPixels()
-        for j in range(256):
+        reverse = -1 if reverse else 1
+        j = 0
+        while True:
             for q in range(line):
                 for i in range(0, num, line):
-                    self.strip.setPixelColor(i+q, self.hue_to_rgb((i+j) % 255))
+                    self.strip.setPixelColor(i+(q*reverse), self.hue_to_rgb((i+j) % 255))
                 yield True
                 await asyncio.sleep(wait_ms/1000.0)
                 for i in range(0, num, line):
-                    self.strip.setPixelColor(i+q, 0)
+                    self.strip.setPixelColor(i+(q*reverse), 0)
+            j = (j+1) % 256
