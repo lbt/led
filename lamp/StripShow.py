@@ -68,17 +68,22 @@ class StripShow:
         if not hasattr(self, method):
             logger.debug("setPainter: invalid painter method: {method}")
             return
-        self.task.cancel()
-        try:
-            await self.task
-        except asyncio.CancelledError:
-            logger.debug(f"The {self.painter} show is over")
+        self.stopPainter()
         # Now everything has stopped we can set the global painter and args
         self.painter = self.Painter(args)
         self.start()
 
         self.controller.publish(f"strip/{self.name}/painter",
                                 self.painter._as_payload())
+
+    async def stopPainter(self):
+        """Stops the current Painter."""
+        logger.debug(f"stopPainter()")
+        self.task.cancel()
+        try:
+            await self.task
+        except asyncio.CancelledError:
+            logger.debug(f"The {self.painter} show is over")
 
     async def show(self):
         while True:
