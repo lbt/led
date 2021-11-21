@@ -10,15 +10,10 @@ from gmqtt import Client as MQTTClient
 from gmqtt.mqtt.constants import MQTTv311
 from lamp.LampController import LampController
 from lamp.StripController import StripController
-from rpi_ws281x import *
+from rpi_ws281x import PixelStrip
 
 import logging
 logger = logging.getLogger(__name__)
-
-def handle_exception(loop, context):
-    # context["message"] will always be there; but context["exception"] may not
-    msg = context.get("exception", context["message"])
-    logger.error(f"Caught exception: {msg}", exc_info=True)
 
 async def main():
     #asyncio.get_running_loop().set_exception_handler(handle_exception)
@@ -30,6 +25,7 @@ async def main():
         lvl = logging.INFO
     modules = ("__main__",
                "lamp",
+#               "sensor2mqtt",
               )
 
     ch = logging.StreamHandler()
@@ -51,4 +47,4 @@ async def main():
     #asyncio.create_task(strip_controller.run())
     await lamp.run()
 
-asyncio.run(main())
+asyncio.run(main(), debug=True)
