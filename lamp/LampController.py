@@ -7,11 +7,13 @@ import socket
 from gmqtt import Client as MQTTClient
 from gmqtt.mqtt.constants import MQTTv311
 
+from sensor2mqtt import MQController
+
 import logging
 logger = logging.getLogger(__name__)
 
 
-class LampController:
+class LampController(MQController):
     """Manages the Strips according to MQTT messages
 
     LampController sets up an MQTT connection and listens for MQTT
@@ -26,13 +28,6 @@ class LampController:
     It also provides a publish mechanism.
 
     """
-    def __init__(self, config):
-        self.subscriptions = []
-        self.handlers = []
-        self.config = config
-        self.host = socket.gethostname()
-        self.cleanup_callbacks = set()
-        self.mqtt = None
 
     async def setup_lamp(self):
         # Setup our sensors here so we can handle any exceptions in run()
@@ -42,29 +37,7 @@ class LampController:
         """This connects to the mqtt (retrying forever) and waits until
         :func:`ask_exit` is called at which point it exits cleanly.
         """
-        self.mqtt = MQTTClient(f"{socket.gethostname()}.{os.getpid()}")
-        self.mqtt.set_auth_credentials(username=self.config["username"],
-                                       password=self.config["password"])
-
-        self.mqtt.on_connect = self._on_connect
-        self.mqtt.on_message = self._on_message
-        self.mqtt.on_disconnect = self._on_disconnect
-
-        stop_event = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        loop.add_signal_handler(signal.SIGINT, self.ask_exit, stop_event)
-        loop.add_signal_handler(signal.SIGTERM, self.ask_exit, stop_event)
-
-        mqtt_host = self.config["mqtt_host"]
-        mqtt_version = MQTTv311
-
-        # Connect to the broker
-        while not self.mqtt.is_connected:
-            try:
-                await self.mqtt.connect(mqtt_host, version=mqtt_version)
-            except Exception as e:
-                logger.warn(f"Error trying to connect: {e}. Retrying.")
-                await asyncio.sleep(1)
+        await self.connect()
 
         try:
             await self.setup_lamp()
@@ -73,56 +46,4 @@ class LampController:
                            f"creating {self.__class__}",
                            exc_info=True)
 
-        await stop_event.wait()  # This will wait until the client is signalled
-        logger.debug(f"Stop received, cleaning up")
-        for cb in self.cleanup_callbacks:
-            await cb()  # Eg tells the probes to stop
-
-        await self.mqtt.disconnect()  # Disconnect after any last messages sent
-        logger.debug(f"client disconnected")
-
-    def add_handler(self, handler):
-        """Register a handler to be called when *any* message is received"""
-        if handler not in self.handlers:
-            self.handlers.append(handler)
-
-    def _on_message(self, client, topic, payload, qos, properties):
-        tasks = list()
-        for h in self.handlers:
-            logger.debug(f"handler for {topic}")
-            tasks.append(h(topic, payload))
-        asyncio.gather(*tasks)
-        logger.debug(f"all handlers gathered for {topic}")
-
-    def subscribe(self, topic):
-        """Subscribes to an MQTT topic (passed directly to MQTT)"""
-        if topic not in self.subscriptions:
-            self.subscriptions.append(topic)
-            logger.debug(f"Subscribing to {topic}")
-            if self.mqtt:
-                self.mqtt.subscribe(topic)
-
-    def _on_connect(self, client, flags, rc, properties):
-        for s in self.subscriptions:
-            logger.debug(f"Re-subscribing to {s}")
-            self.mqtt.subscribe(s)
-        logger.debug('Connected and subscribed')
-
-    def _on_disconnect(self, client, packet, exc=None):
-        logger.debug('Disconnected')
-
-    def publish(self, topic, payload, retain=True):
-        """Publish :param payload: to :param topic:"""
-        logger.debug(f"Publishing {topic} = {payload}")
-        self.mqtt.publish(topic, payload, qos=2, retain=True)
-
-    def ask_exit(self, stop_event):
-        """Handle outstanding messages and cleanly disconnect""" 
-        logger.warning("Client received signal and exiting")
-        stop_event.set()
-
-    def handle_exception(self, loop, context):
-        # context["message"] will always be there; but context["exception"] may not
-        msg = context.get("exception", context["message"])
-        logger.error(f"Caught exception: {msg}", exc_info=True)
-
+        await self.finish()  # This will wait until the client is signalled
