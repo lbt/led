@@ -26,6 +26,7 @@ async def main():
     modules = ("__main__",
                "lamp",
 #               "sensor2mqtt",
+               "microphone",
               )
 
     ch = logging.StreamHandler()
