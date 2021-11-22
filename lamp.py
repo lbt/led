@@ -46,5 +46,6 @@ async def main():
     strip_controller = StripController(lamp, strip, config["strips"])
     #asyncio.create_task(strip_controller.run())
     await lamp.run()
+    strip_controller.exit()
 
 asyncio.run(main(), debug=True)
