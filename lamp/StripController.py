@@ -1,6 +1,7 @@
 import asyncio
 
 from .StripShow import *
+from .MusicShow import *
 import logging
 import json
 
@@ -40,6 +41,7 @@ class StripController:
         self.mqctrl = mqctrl
         mqctrl.add_handler(self.msg_handler)
         mqctrl.subscribe("named/control/lamp/#")
+        mqctrl.add_cleanup_callback(self.cleanup)
         self.strips = {}
         self.shows = {}
         for name in config.keys():
@@ -48,8 +50,16 @@ class StripController:
                                            num=config[name]["num_pixels"])
             self.strips[name] = ss
         logger.debug(f"strips {self.strips}")
-        logger.debug(f"shows {self.shows}")
         self.effects = []
+
+    async def cleanup(self):
+        for strip in self.strips.values():
+            logger.debug(f"stopping strip {strip}")
+            if strip in self.shows:
+                show = self.shows[strip]
+                logger.debug(f"stopping show {show}")
+                await show.removeStrip(strip)
+        logger.debug(f"{self} is all cleaned up")
 
     async def msg_handler(self, topic, payload):
         """

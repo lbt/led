@@ -25,12 +25,10 @@ class StripShow:
 
     '''
 
-
     def __init__(self, controller, args):
         self.controller = controller
         self.strips = []
         self.name = self.__class__
-        #self.painter = self.Painter({"painter": "rainbowChase"})
         self.running = True
         self.args = None
         self.task = None
@@ -75,18 +73,33 @@ class StripShow:
         try:
             await self.task
         except asyncio.CancelledError:
-            logger.debug(f"The {self.name} show is over")
+            logger.debug(f"The {self.name} show was hard cancelled")
+        await self.showHasFinished()
+        logger.debug(f"The {self.name} show is over")
 
     async def show(self):
         logger.error(f"showing {self.name}")
         while True:
             if self.running:
-                # paint a frame
-                async for _frame in self.paint():
-                    # We only need to render one strip
-                    self.strips[0].show()
+                # paint frames.
+                try:
+                    # This may never finish
+                    async for _frame in self.paint():
+                        # We only need to render one strip
+                        self.strips[0].show()
+                except asyncio.CancelledError:
+                    return
+                except Exception as e:
+                    logger.error(f"{e}", exc_info=True)
+                    import traceback
+                    logger.error(traceback.format_tb(e.__traceback__))
+                    self.running = False
             else:
                 await asyncio.sleep(0.1)
+
+    async def showHasFinished(self):
+        "Override this to do any cleanup after the show is done"
+        pass
 
     def setPixelColor(self, p, c):
         for s in self.strips:
