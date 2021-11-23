@@ -16,16 +16,7 @@ class Microphone:
         self.p = pyaudio.PyAudio()
         self.frames_per_buffer = int(MIC_RATE / FPS)
         logger.debug(f"working on {FPS} fps and {self.frames_per_buffer} frames")
-
-        self. stream = self.p.open(format=pyaudio.paInt16,
-                                   input_device_index=1,
-                                   channels=1,
-                                   rate=MIC_RATE,
-                                   input=True,
-                                   frames_per_buffer=self.frames_per_buffer)
-        #,
-        #                           stream_callback=stream_put)
-        # This is None or a numpy array of np.float32 frames
+        self.stream = None
         # It's written from the run_in_executor Thread and read from
         # the async main thread so it needs locking
         self._audiodata = None
@@ -46,6 +37,14 @@ class Microphone:
                 return c
 
     def start_stream(self):
+        logger.debug(f"Opening stream")
+        self. stream = self.p.open(format=pyaudio.paInt16,
+                                   input_device_index=1,
+                                   channels=1,
+                                   rate=MIC_RATE,
+                                   input=True,
+                                   frames_per_buffer=self.frames_per_buffer)
+
         loop = asyncio.get_event_loop()
         self.task = loop.run_in_executor(None, self._start_stream)
 
@@ -63,15 +62,18 @@ class Microphone:
                 return
 
     def pause_stream(self):
-        with self._p_lock:
-            self.stream.stop_stream()
+        if self.stream:
+            with self._p_lock:
+                self.stream.stop_stream()
 
     async def close(self):
         logger.debug(f"Closing mic")
-        with self._p_lock:
-            self.stream.close()
+        if self.stream:
+            with self._p_lock:
+                self.stream.close()
         logger.debug(f"Waiting for thread/task")
         await self.task
+        self.p.terminate()
         logger.debug(f"Mic is closed")
 
     # If we want callback see:
