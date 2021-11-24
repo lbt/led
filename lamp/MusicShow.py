@@ -69,34 +69,19 @@ class MusicShow(StripShow):
 
         self._gamma = np.load(config.GAMMA_TABLE_PATH)
         """Gamma lookup table used for nonlinear brightness correction"""
-        self._prev_pixels = np.tile(253, (3, self.numPixels))
-        """Pixel values that were most recently displayed on the LED strip"""
-        self.pixels = np.tile(1, (3, self.numPixels))
-        """Pixel values for the LED strip"""
-        self._time_prev = time.time() * 1000.0
-        """The previous time that the frames_per_second() function was called
-        """
-        self._fps = dsp.ExpFilter(val=config.FPS, alpha_decay=0.2,
-                                  alpha_rise=0.2)
-        """The low-pass filter used to estimate frames-per-second"""
 
         # Number of audio samples to read every time frame
         self.samples_per_frame = int(config.MIC_RATE / config.FPS)
         # Array containing the rolling audio sample window
         self.y_roll = np.random.rand(
             config.N_ROLLING_HISTORY, self.samples_per_frame) / 1e16
-        self.prev_fps_update = time.time()
         self.fft_window = np.hamming(int(config.MIC_RATE / config.FPS) *
                                      config.N_ROLLING_HISTORY)
         self.mel_gain = dsp.ExpFilter(np.tile(1e-1, config.N_FFT_BINS),
                                       alpha_decay=0.01, alpha_rise=0.99)
         self.mel_smoothing = dsp.ExpFilter(np.tile(1e-1, config.N_FFT_BINS),
                                            alpha_decay=0.5, alpha_rise=0.99)
-        self.mirror = False
         self.mic = Microphone()
-        
-        self.gain = dsp.ExpFilter(np.tile(0.01, config.N_FFT_BINS),
-                                  alpha_decay=0.001, alpha_rise=0.99)
 
     def to_mel(self, audio_samples):
         # Thie was microphone_update() in visualization.py
@@ -110,8 +95,7 @@ class MusicShow(StripShow):
         vol = np.max(np.abs(y_data))
         if vol < 0:  # config.MIN_VOLUME_THRESHOLD:
             # print('No audio input. Volume below threshold. Volume:', vol)
-            self.pixels = np.tile(0, (3, self.numPixels))
-            self.update()
+            return None
         else:
             # Transform audio input into the frequency domain
             N = len(y_data)
@@ -227,11 +211,11 @@ class MusicEnergy(MusicShow):
                 await asyncio.sleep(0.1)
                 continue
             y = self.to_mel(y)
-
-            self.gain.update(y)
-            y /= self.gain.value
+            y = np.copy(y)
+            gain.update(y)
+            y /= gain.value
             # Scale by the width of the LED strip
-            y *= float((self.numPixels // 2) - 1)
+            y *= float((self.numPixels // 2) - 1)*2
             # Map color channels according to energy in the different freq bands
             scale = 0.9
             r = int(np.mean(y[:len(y) // 3]**scale))
@@ -244,6 +228,7 @@ class MusicEnergy(MusicShow):
             pixels[1, r:] = 0.0
             pixels[2, :b] = 255.0
             pixels[2, b:] = 0.0
+            await asyncio.sleep(0)
             p_filt.update(pixels)
             pixels = np.round(p_filt.value)
             # Apply substantial blur to smooth the edges
