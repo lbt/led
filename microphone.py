@@ -26,6 +26,8 @@ class Microphone:
         # closing because it's likely blocking in the other thread
         self._p_lock = threading.Lock()
 
+        self.task = None
+
     @property
     def audiodata(self):
         with self._audiodata_lock:
@@ -71,8 +73,9 @@ class Microphone:
         if self.stream:
             with self._p_lock:
                 self.stream.close()
-        logger.debug(f"Waiting for thread/task")
-        await self.task
+        if self.task:
+            logger.debug(f"Waiting for thread/task")
+            await self.task
         self.p.terminate()
         logger.debug(f"Mic is closed")
 
