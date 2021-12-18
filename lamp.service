@@ -1,0 +1,17 @@
+[Unit]
+Description=LED Lamp
+Requires=everything.mount
+StartLimitBurst=5
+StartLimitIntervalSec=10
+
+[Service]
+WorkingDirectory=/home/pi
+ExecStart=/home/pi/venv-dancy/bin/python3 /everything/devel/raspi/led/lamp.py
+ExecReload=/bin/kill -HUP
+KillMode=process
+Restart=on-failure
+RestartPreventExitStatus=255
+RestartSec=5
+
+[Install]
+WantedBy=default.target

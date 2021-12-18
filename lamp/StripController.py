@@ -37,18 +37,21 @@ class StripController:
 
     def __init__(self, mqctrl, strip, config):
         """"""
+        self.name = config['name']
         self.strip = strip
         self.mqctrl = mqctrl
         mqctrl.add_handler(self.msg_handler)
-        mqctrl.subscribe("named/control/lamp/#")
+        mqctrl.subscribe(f"named/control/lamp/{self.name}/#")
         mqctrl.add_cleanup_callback(self.cleanup)
         self.strips = {}
         self.shows = {}
-        for name in config.keys():
-            logger.debug(f"config {name} is {config[name]}")
-            ss = strip.createPixelSubStrip(config[name]["first_pixel"],
-                                           num=config[name]["num_pixels"])
-            self.strips[name] = ss
+        for sname in config.keys():
+            detail = config[sname]
+            logger.debug(f"config {sname} is {detail}")
+            if isinstance(detail, dict):
+                ss = strip.createPixelSubStrip(detail["first_pixel"],
+                                               num=detail["num_pixels"])
+                self.strips[sname] = ss
         logger.debug(f"strips {self.strips}")
         self.effects = []
 
@@ -77,11 +80,15 @@ class StripController:
         control = topics[1]
 
         if control == "brightness":
+            # named/control/lamp/{NAME}/brightness
             self.setBrightness(int(payload))
         elif control == "state":
+            # named/control/lamp/{NAME}/state
             # Don't do on/off atm
             pass
         elif control == "strip":
+            # named/control/lamp/{NAME}/strip/{NAME}/painter/{PAINTER}
+            # named/control/lamp/{NAME}/strip/{NAME}/mirror/{NAME2}
             sname = topics[2]
             if sname != "all" and sname not in self.strips:
                 logger.warning(f"Strip {sname} not found in lamp {name}")
@@ -91,7 +98,7 @@ class StripController:
                 await self.setPainter(sname, payload)
             if topics[3] == "mirror":
                 logger.debug(f"Paint strip {sname} {payload}")
-                await self.setPainter(payload)
+                await self.setPainter(sname, payload)
         return True
 
     async def setPainter(self, sname, rawpayload):
@@ -106,6 +113,7 @@ class StripController:
         args = json.loads(rawpayload.decode("utf-8") or "null")
         try:
             cls = args["painter"]
+            # validate the cls here
         except (TypeError, KeyError):
             logger.debug("No 'painter' found in payload")
             return
@@ -136,13 +144,13 @@ class StripController:
         self.strip.setBrightness(b)
         # Now run a frame of the strip show in case it's static
         self.strip.show()
-        self.mqctrl.publish("named/sensor/lamp/Ballroom/brightness", b)
+        self.mqctrl.publish(f"named/sensor/lamp/{self.name}/brightness", b)
 
     def publish(self, topic, payload):
         """Publish payload to topic
         Only needs the strip section of the topic
         """
-        self.mqctrl.publish(f"named/sensor/lamp/Ballroom/{topic}", payload)
+        self.mqctrl.publish(f"named/sensor/lamp/{self.name}/{topic}", payload)
 
     def exit(self):
         for s in self.strips.values():

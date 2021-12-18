@@ -69,11 +69,12 @@ class StripShow:
     async def stop(self):
         """Stops the show"""
         logger.debug(f"stop()")
-        self.task.cancel()
-        try:
-            await self.task
-        except asyncio.CancelledError:
-            logger.debug(f"The {self.name} show was hard cancelled")
+        if self.task:
+            self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                logger.debug(f"The {self.name} show was hard cancelled")
         await self.showHasFinished()
         logger.debug(f"The {self.name} show is over")
 

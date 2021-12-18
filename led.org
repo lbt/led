@@ -1,0 +1,83 @@
+
+# Need tp disable pwm and sound so we can use pwm for neopixel stuff
+sudo systemctl stop alsa-state.service 
+rmmod snd_bcm2835 
+
+sudo systemctl disable alsa-state.service 
+
+cat <<EOF | sudo tee -a /etc/modprobe.d/blacklist-pwm.conf 
+blacklist bcm2835_codec
+blacklist bcm2835_isp
+blacklist bcm2835_mmal_vchiq
+blacklist bcm2835_v4l2
+blacklist snd_bcm2835
+EOF
+
+# reboot
+
+# Setup python
+sudo apt install python3-venv
+
+python3 -m venv ~/venv-leds --system-site-packages
+. ~/venv-leds/bin/activate
+
+sudo apt install build-essential python3-dev python3-wheel
+python3 -m pip install adafruit-circuitpython-neopixel
+
+python3 -m pip install toml gmqtt
+# python -m pip install  /home/pi/led/rpi-ws281x-python/library/
+python -m pip install -e  /home/pi/led/rpi-ws281x-python/library
+
+ln -s /everything/devel/raspi/led/ ~/
+
+export PYTHONPATH=/home/pi/heating
+
+cat << EOF > ~/lamp.toml
+mqtt_host = "mqtt.dgreaves.com"
+username = "mqtt-test"
+password = "mqtt-test"
+debug = true
+
+led_count = 140
+led_pin = 18
+led_freq_hz = 800000
+led_dma = 10
+led_invert = false
+led_brightness = 0
+led_channel = 0
+[strips]
+[strips.left]
+first_pixel = 0
+num_pixels = 140
+#[strips.right]
+#first_pixel = 70
+#num_pixels = 70
+EOF
+# Lives at file://ssh:pi@larch:~/lamp.toml
+
+* Level Shifter 
+1 5v out   yellow
+2 5v       purple
+3 3.3v in  grey
+4 3.3v     blue
+https://electronics.stackexchange.com/questions/82104/single-transistor-level-up-shifter
+* HC-SR04 Distance Sensor
+
+Pins
+4: L Echo
+17: R Trig
+27: L Trig
+22: R Echo
+18: Neopixel data
+
+
+
+
+# Seems a problem with latest kernel - try:
+rpi-update e7110defbc66d3469a470bcd5f896fabf518d663
+  https://github.com/Hexxeh/rpi-firmware/commits/master
+  Commits on Jan 15, 2021
+  kernel: Bump to 5.10.7
+b3b238cf1e64d0cc272732e77ae6002c75184495 5.4.72
+
+e1050e94821a70b2e4c72b318d6c6c968552e9a2

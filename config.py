@@ -58,13 +58,13 @@ depends on how long the LED strip is.
 _max_led_FPS = int(((N_PIXELS * 30e-6) + 50e-6)**-1.0)
 assert FPS <= _max_led_FPS, 'FPS must be <= {}'.format(_max_led_FPS)
 
-MIN_FREQUENCY = 50
+MIN_FREQUENCY = 25
 """Frequencies below this value will be removed during audio processing"""
 
 MAX_FREQUENCY = 18000
 """Frequencies above this value will be removed during audio processing"""
 
-N_FFT_BINS = 4
+N_FFT_BINS = 50
 """Number of frequency bins to use when transforming audio to frequency domain
 
 Fast Fourier transforms are used to transform time-domain audio data to the
@@ -79,7 +79,7 @@ number of bins. More bins is not always better!
 There is no point using more bins than there are pixels on the LED strip.
 """
 
-N_ROLLING_HISTORY = 2
+N_ROLLING_HISTORY = 3
 """Number of past audio frames to include in the rolling window"""
 
 MIN_VOLUME_THRESHOLD = 1e-9

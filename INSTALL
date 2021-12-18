@@ -1,0 +1,8 @@
+pip install -e /everything/devel/raspi/sensor2mqtt/
+pip install -e /everything/devel/raspi/led/
+mkdir -p ~/.config/systemd/user/
+cp /everything/devel/raspi/led/lamp.service ~/.config/systemd/user/
+sudo loginctl enable-linger pi
+systemctl --user daemon-reload
+systemctl --user enable lamp.service
+systemctl --user start lamp.service
