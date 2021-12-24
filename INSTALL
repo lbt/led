@@ -1,5 +1,61 @@
+
+# Needed packages for scipy/numpy sound snd sysfs
+# Avoid libcblas.so.3 cannot open shared object file: No such file or directory
+sudo apt-get install libatlas3-base libgfortran5
+# And for Sound
+sudo apt install libportaudio2
+sudo apt install sysfsutils
+# Listen to audio via snapcast
+sudo dpkg -i /everything/devel/snapcasts/debs2/snapclient_0.25.0-1_armhf.deb
+sudo apt install -f
+
+# Setup venv
+sudo apt install python3-venv python3-pip
+python3 -mvenv ~/venv-dancy --system-site-packages
+. ~/venv-dancy/bin/activate
+pip install scipy==1.6.3
 pip install -e /everything/devel/raspi/sensor2mqtt/
+pip install -e /everything/devel/raspi/led/rpi-ws281x-python/
 pip install -e /everything/devel/raspi/led/
+
+# Enable sound
+echo snd-aloop | sudo tee -a /etc/modules-load.d/snd-aloop.conf
+sudo modprobe snd-aloop
+
+# Enable SPI
+sudo sed -i -e '/spi=on/s/#//' /boot/config.txt
+echo /devices/system/cpu/cpu0/cpufreq/scaling_min_freq = 1000000 | sudo tee -a /etc/sysfs.d/99-cpu-min.conf
+
+
+cat <<EOF > ~/lamp.toml
+mqtt_host = "mqtt.dgreaves.com"
+username = "mqtt-test"
+password = "mqtt-test"
+debug = true
+
+MIC_RATE = 48000
+# """Sampling frequency of the microphone in Hz"""
+FPS = 50
+#"""Desired refresh rate of the visualization (frames per second)
+
+
+led_count = 300
+led_pin = 10
+led_freq_hz = 800000
+led_dma = 10
+led_invert = false
+led_brightness =200
+led_channel = 0
+[strips]
+name="Study"
+[strips.left]
+first_pixel = 0
+num_pixels = 150
+[strips.right]
+first_pixel = 150
+num_pixels = 150
+EOF
+
 mkdir -p ~/.config/systemd/user/
 cp /everything/devel/raspi/led/lamp.service ~/.config/systemd/user/
 sudo loginctl enable-linger pi

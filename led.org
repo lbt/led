@@ -1,7 +1,7 @@
 
 # Need tp disable pwm and sound so we can use pwm for neopixel stuff
 sudo systemctl stop alsa-state.service 
-rmmod snd_bcm2835 
+sudo rmmod snd_bcm2835
 
 sudo systemctl disable alsa-state.service 
 
