@@ -5,17 +5,20 @@ import threading
 import numpy as np
 import pyaudio
 
+import config
+# Just need
+# MIC_RATE = 48000
+# FPS = 50
+
 logger = logging.getLogger(__name__)
 
-MIC_RATE = 48000
-FPS = 15
 
 
 class Microphone:
     def __init__(self):
         self.p = pyaudio.PyAudio()
-        self.frames_per_buffer = int(MIC_RATE / FPS)
-        logger.debug(f"working on {FPS} fps and {self.frames_per_buffer} frames")
+        self.frames_per_buffer = int(config.MIC_RATE / config.FPS)
+        logger.debug(f"working on {config.FPS} fps and {self.frames_per_buffer} frames")
         self.stream = None
         # It's written from the run_in_executor Thread and read from
         # the async main thread so it needs locking
@@ -43,7 +46,7 @@ class Microphone:
         self. stream = self.p.open(format=pyaudio.paInt16,
                                    input_device_index=1,
                                    channels=1,
-                                   rate=MIC_RATE,
+                                   rate=config.MIC_RATE,
                                    input=True,
                                    frames_per_buffer=self.frames_per_buffer)
 
