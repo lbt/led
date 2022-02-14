@@ -5,17 +5,27 @@ sudo apt-get install libatlas3-base libgfortran5
 # And for Sound
 sudo apt install libportaudio2
 sudo apt install sysfsutils
+
+# All together is
+sudo apt update
+sudo apt install libatlas3-base libgfortran5 libportaudio2 sysfsutils python3-venv python3-pip
+
 # Listen to audio via snapcast
 sudo dpkg -i /everything/devel/snapcasts/debs2/snapclient_0.25.0-1_armhf.deb
 sudo apt install -f
 
 # Setup venv
 sudo apt install python3-venv python3-pip
-python3 -mvenv ~/venv-dancy --system-site-packages
-. ~/venv-dancy/bin/activate
+
+# if the venv uses --system-site-packages
+# then you need to export SETUPTOOLS_USE_DISTUTILS=stdlib
+# However this seems to stop rpi-wd281x-python installation :(
+# So no site-packages on debian for now
+python3 -mvenv ~/venv-leds
+. ~/venv-leds/bin/activate
 pip install scipy==1.6.3
 pip install -e /everything/devel/raspi/sensor2mqtt/
-pip install -e /everything/devel/raspi/led/rpi-ws281x-python/
+pip install -e /everything/devel/raspi/led/rpi-ws281x-python/library
 pip install -e /everything/devel/raspi/led/
 
 # Enable sound
