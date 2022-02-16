@@ -6,8 +6,6 @@ import signal
 import logging
 import socket
 
-from gmqtt import Client as MQTTClient
-from gmqtt.mqtt.constants import MQTTv311
 from lamp.LampController import LampController
 from lamp.StripController import StripController
 from rpi_ws281x import PixelStrip
