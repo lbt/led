@@ -31,6 +31,10 @@ class Microphone:
 
         self.task = None
 
+    def __del__(self):
+        logger.debug("Terminating PyAudio")
+        self.p.terminate()
+
     @property
     def audiodata(self):
         with self._audiodata_lock:
@@ -42,13 +46,13 @@ class Microphone:
                 return c
 
     def start_stream(self):
-        logger.debug(f"Opening stream")
-        self. stream = self.p.open(format=pyaudio.paInt16,
-                                   input_device_index=1,
-                                   channels=1,
-                                   rate=config.MIC_RATE,
-                                   input=True,
-                                   frames_per_buffer=self.frames_per_buffer)
+        logger.debug(f"Opening stream for {self}")
+        self.stream = self.p.open(format=pyaudio.paInt16,
+                                  input_device_index=1,
+                                  channels=1,
+                                  rate=config.MIC_RATE,
+                                  input=True,
+                                  frames_per_buffer=self.frames_per_buffer)
 
         loop = asyncio.get_event_loop()
         self.task = loop.run_in_executor(None, self._start_stream)
@@ -64,6 +68,7 @@ class Microphone:
                 with self._audiodata_lock:
                     self._audiodata = y
             except IOError:
+                logger.debug("_start_stream exiting due to IOError")
                 return
 
     def pause_stream(self):
@@ -72,14 +77,13 @@ class Microphone:
                 self.stream.stop_stream()
 
     async def close(self):
-        logger.debug(f"Closing mic")
+        logger.debug(f"Closing mic {self}")
         if self.stream:
             with self._p_lock:
                 self.stream.close()
         if self.task:
             logger.debug(f"Waiting for thread/task")
             await self.task
-        self.p.terminate()
         logger.debug(f"Mic is closed")
 
     # If we want callback see:
