@@ -1,11 +1,61 @@
 import asyncio
+import hashlib
+import json
+import logging
+from typing import Dict, Any
 
 from .StripShow import *
 from .MusicShow import *
-import logging
-import json
 
 logger = logging.getLogger(__name__)
+
+class HStrip:
+    """Helper class that encapsulates the Strip state
+    """
+
+    def __init__(self, name, strip, config):
+        self.name = name
+        self.strip = strip
+        self.ss = strip.createPixelSubStrip(config[name]["first_pixel"],
+                                            num=config[name]["num_pixels"])
+        # We store the config and hash of each config
+        self._quiet = None
+        self.quiet_h = None
+        self._music = None
+        self.music_h = None
+        self.current_show = None
+
+    @property
+    def quiet(self):
+        return self._quiet
+
+    @quiet.setter
+    def quiet(self, val):
+        assert val is not None
+        self._quiet = val
+        self.quiet_h = self.dict_hash(val)
+
+    @property
+    def music(self):
+        return self._music
+
+    @music.setter
+    def music(self, val):
+        self._music = val
+        if val is not None:
+            self.music_h = self.dict_hash(val)
+        else:
+            self.music_h = None
+
+    # https://www.doc.ic.ac.uk/~nuric/coding/how-to-hash-a-dictionary-in-python.html
+    def dict_hash(self, dictionary: Dict[str, Any]) -> str:
+        """MD5 hash of a dictionary."""
+        dhash = hashlib.md5()
+        # We need to sort arguments so {'a': 1, 'b': 2} is
+        # the same as {'b': 2, 'a': 1}
+        encoded = json.dumps(dictionary, sort_keys=True).encode()
+        dhash.update(encoded)
+        return dhash.hexdigest()
 
 
 class StripController:
@@ -42,116 +92,254 @@ class StripController:
         self.mqctrl = mqctrl
         mqctrl.add_handler(self.msg_handler)
         mqctrl.subscribe(f"named/control/lamp/{self.name}/#")
+        mqctrl.subscribe("mpd/pine/player")
         mqctrl.add_cleanup_callback(self.cleanup)
         self.strips = {}
+        # shows contains the actual running show Class instance keyed
+        # on the config of the instance
         self.shows = {}
         for sname in config.keys():
-            detail = config[sname]
-            logger.debug(f"config {sname} is {detail}")
-            if isinstance(detail, dict):
-                ss = strip.createPixelSubStrip(detail["first_pixel"],
-                                               num=detail["num_pixels"])
-                self.strips[sname] = ss
+            if isinstance(config[sname], dict):
+                self.strips[sname] = HStrip(sname, strip, config)
         logger.debug(f"strips {self.strips}")
         self.effects = []
+        self.music_playing = False
+        self._state = True
 
     async def cleanup(self):
-        for strip in self.strips.values():
-            logger.debug(f"stopping strip {strip}")
-            if strip in self.shows:
-                show = self.shows[strip]
-                logger.debug(f"stopping show {show}")
-                await show.removeStrip(strip)
+        for show in self.shows.values():
+            logger.debug(f"stopping show {show}")
+            await show.stop()
+
+        # for strip in self.strips.values():
+        #     logger.debug(f"stopping strip {strip}")
+        #     if strip.ss in self.shows:
+        #         show = self.shows[strip.ss]
+        #         logger.debug(f"stopping show {show}")
+        #         await show.removeStrip(strip.ss)
         logger.debug(f"{self} is all cleaned up")
 
-    async def msg_handler(self, topic, payload):
+    async def msg_mpd_handler(self, topic, rawpayload):
+        """
+        Message format is:
+        mpd/<host>/player
+        """
+        logger.debug("Handler got mpd msg")
+        payload = json.loads(rawpayload)
+        try:
+            state = payload["status"]["state"]
+        except KeyError:
+            logger.debug("No status/state in payload")
+            return False
+
+        if state == "play":
+            if not self.music_playing:
+                logger.debug(f"Music_playing => {self.music_playing}")
+                self.music_playing = True
+                for sname in self.strips.keys():
+                    await self.setPainter(sname)
+        else:
+            if self.music_playing:
+                logger.debug(f"Music_playing => {self.music_playing}")
+                self.music_playing = False
+                for sname in self.strips.keys():
+                    await self.setPainter(sname)
+
+        logger.debug("Music_playing handled")
+        return True
+
+    async def msg_handler(self, topic, rawpayload):
         """
         Message format is:
         named/control/lamp/{NAME}/brightness
         named/control/lamp/{NAME}/state
-        named/control/lamp/{NAME}/strip/{NAME}/painter/{PAINTER}
-        named/control/lamp/{NAME}/strip/{NAME}/mirror/{NAME2}
+        # named/control/lamp/{NAME}/strip/{NAME}/painter/{PAINTER}
+        # named/control/lamp/{NAME}/strip/{NAME}/mirror/{NAME2}
+        # named/control/lamp/{NAME}/state
+        named/control/lamp/{NAME}
+        {
+         state: boolean
+         brightness: 0-255
+         pixels: <n>
+         strips: {
+          <strip>: {
+            pixels: <n>
+            painter : {
+                name: "",
+                key: "val"...
+            },
+            music_painter : {
+                name: "",
+                key: "val"...
+            },
+         },
+         ...
+        }
+        # named/control/lamp/{NAME}/strip/{NAME}/mirror/{NAME2}
+
         """
-        logger.debug(f"Handler got msg {topic} {payload}")
+        logger.debug(f"Handler got msg {topic}")
+        if topic == "mpd/pine/player":
+            return await self.msg_mpd_handler(topic, rawpayload)
         if not topic.startswith("named/control/lamp"):
             return False
+        logger.debug(f"rawpayload {rawpayload}")
         topics = topic.split("/")[3:]
         name = topics[0]
-        control = topics[1]
 
-        if control == "brightness":
-            # named/control/lamp/{NAME}/brightness
-            self.setBrightness(int(payload))
-        elif control == "state":
-            # named/control/lamp/{NAME}/state
-            # Don't do on/off atm
-            pass
-        elif control == "strip":
-            # named/control/lamp/{NAME}/strip/{NAME}/painter/{PAINTER}
-            # named/control/lamp/{NAME}/strip/{NAME}/mirror/{NAME2}
-            sname = topics[2]
-            if sname != "all" and sname not in self.strips:
-                logger.warning(f"Strip {sname} not found in lamp {name}")
-                return True
-            if topics[3] == "painter":
-                logger.debug(f"Paint strip {sname} {payload}")
-                await self.setPainter(sname, payload)
-            if topics[3] == "mirror":
-                logger.debug(f"Paint strip {sname} {payload}")
-                await self.setPainter(sname, payload)
+        if name != self.name:
+            logger.debug(f"Message is for {name}, not me {self.name}")
+            return False
+
+        if len(topics) > 1:
+            attr = topics[1]
+            if attr in ["brightness", "state"]:
+                # named/control/lamp/{NAME}/<attr> (brightness or state)
+                val = rawpayload.decode("utf-8") or "None"
+                payload = {attr: val}
+            else:
+                logger.debug(f"Unknown attribute {attr}")
+                return False
+        else:
+            # named/control/lamp/{NAME}
+            try:
+                payload = json.loads(rawpayload.decode("utf-8") or "null")
+            except JSONDecodeError:
+                logger.warning("Error decoding payload")
+                return False
+
+        # payload is now a dict of things to do
+        if "state" in payload:
+            await self.setState(payload["state"])
+        if "brightness" in payload:
+            await self.setBrightness(int(payload["brightness"]))
+        if "pixels" in payload:
+            logger.warning("pixels attr is readonly")
+        if "strips" in payload:
+            strips = payload["strips"]
+            for sname, info in strips.items():
+                if sname != "all" and sname not in self.strips:
+                    logger.warning(f"Strip {sname} not found in lamp {name}")
+                    return True
+                if sname == "all":
+                    for sname in self.strips.keys():
+                        logger.debug(f"Paint strip {sname} {info}")
+                        await self.storePainter(sname, info)
+                else:
+                    await self.storePainter(sname, info)
+
+        self.publishState()
         return True
 
-    async def setPainter(self, sname, rawpayload):
+    async def storePainter(self, sname, args):
         """Sets the Painter for one or more strips using a json structure.
 
-        The raw payload is interpreted as a utf-8 json string
-        containing a hash with a 'painter' key and the args to the
-        particular painter.
+        args is a hash with 'painter' and maybe 'music_painter' keys
+        and the args to the particular painter.
+
         """
-        logger.debug(f"setPainter({rawpayload})")
-        # validate the sname(s) here
-        args = json.loads(rawpayload.decode("utf-8") or "null")
+        logger.debug(f"storePainter({sname}, {args})")
+        # validate here
+        music = args.get("music_painter", None)
         try:
-            cls = args["painter"]
+            quiet = args["painter"]
             # validate the cls here
         except (TypeError, KeyError):
             logger.debug("No 'painter' found in payload")
             return
-        try:
-            newshow = globals()[cls](self, args)
-        except NameError:
-            logger.debug(f"setPainter: invalid painter class: {cls}")
 
-        if sname == "all":
-            strips = self.strips.keys()
+        logger.debug(f"music: {music}")
+        self.strips[sname].music = music
+        logger.debug(f"quiet: {quiet}")
+        self.strips[sname].quiet = quiet
+        await self.setPainter(sname)
+
+    async def setPainter(self, sname):
+        """Look at the HStrip for sname and decide what show it wants. Then
+        Look in the shows to see if that one is running. If so, add it
+        otherwise create and add it
+
+        """
+        striph = self.strips[sname]
+        if self.music_playing:
+            args = striph.music
+            key = striph.music_h
         else:
-            strips = sname.split(",")
+            args = striph.quiet
+            key = striph.quiet_h
 
-        for sname in strips:
-            s = self.strips[sname]
-            if s in self.shows:
-                await self.shows[s].removeStrip(s)
-            # Now everything has stopped we can set the global painter and args
-            newshow.addStrip(s)
-            self.shows[s] = newshow
-        newshow.start()
+        # We need to have been initialised
+        if not (args and key):
+            return
+
+        try:
+            newshow = self.shows[key]
+            logger.debug("setPainter: Found that show")
+        except KeyError:
+            try:
+                cls = args["name"]
+                newshow = globals()[cls](self, args)
+                self.shows[key] = newshow
+                logger.debug("setPainter: Created that show")
+            except KeyError:
+                logger.debug("setPainter: Np painter class in args")
+                return
+            except NameError:
+                logger.debug(f"setPainter: invalid painter class: {cls}")
+                return
+
+        if striph.current_show:
+            logger.debug(f"setPainter: Leaving show {striph.current_show}")
+            await striph.current_show.removeStrip(striph.ss)
+            striph.current_show = None
+        # Now everything has stopped we can set the global painter and args
+        logger.debug("setPainter: Joining new show")
+        newshow.addStrip(striph.ss)
+        striph.current_show = newshow
 
         # self.controller.publish(f"strip/{self.name}/painter",
         #                         self.painter._as_payload())
     
-    def setBrightness(self, b):
+    async def setBrightness(self, b):
         logger.debug(f"Setting brightness to {b}")
         self.strip.setBrightness(b)
         # Now run a frame of the strip show in case it's static
         self.strip.show()
-        self.mqctrl.publish(f"named/sensor/lamp/{self.name}/brightness", b)
 
-    def publish(self, topic, payload):
-        """Publish payload to topic
-        Only needs the strip section of the topic
+    async def setState(self, s):
+        state = s in ("ON", "on", "On", "True", "true", "1")
+        logger.debug(f"Setting state ({s}) to {state}")
+        self._state = state
+        if state:
+            for sname in self.strips.keys():
+                await self.setPainter(sname)
+        else:
+            for show in self.shows.values():
+                await show.stop()
+
+    def publishState(self):
+        """Publish our state
         """
-        self.mqctrl.publish(f"named/sensor/lamp/{self.name}/{topic}", payload)
+
+        strip_data = {}
+        for strip in self.strips.values():
+            strip_data["pixels"] = strip.ss.numPixels(),
+            strip_data["painter"] = strip.quiet
+            if strip.music:
+                strip_data["music_painter"] = strip.music
+
+        payload = {
+            "brightness": self.strip.getBrightness(),
+            "state": "ON" if self._state else "OFF",
+            "pixels": self.strip.numPixels(),
+            "strips": strip_data
+            }
+
+        msg = json.dumps(payload, sort_keys=True).encode()
+        logger.debug(f"Publish {msg}")
+
+        self.mqctrl.publish(f"named/sensor/lamp/{self.name}", msg)
 
     def exit(self):
         for s in self.strips.values():
-            s.off()
+            s.ss.off()
