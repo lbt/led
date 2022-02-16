@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 class StripShow:
     '''Define various ways to animate LEDs in a SubStrip.
 
-    StripShow manages an internal task which runs show() forever.
+    StripShow manages an internal task which runs show() whilst it has
+    strips.
 
     show() calls the current painter on each iteration and then calls
     strip.show() to actually update the strip.
@@ -29,7 +30,7 @@ class StripShow:
         self.controller = controller
         self.strips = []
         self.name = self.__class__
-        self.running = True
+        self.running = False
         self.args = None
         self.task = None
         self.args = args
@@ -49,6 +50,8 @@ class StripShow:
         self.strips.append(strip)
         self.numPixels = strip.numPixels()
         logger.debug(f"{self.name} has {self.numPixels} pixels")
+        if not self.running:
+            self.start()
         return True
 
     async def removeStrip(self, strip):
@@ -59,22 +62,27 @@ class StripShow:
             self.numPixels = 0
             logger.debug(f"{self.name} has no more strips - stopping")
             await self.stop()
+            self.running = False
         return l
 
     def start(self):
-        self.task = asyncio.create_task(self.show())
         self.running = True
+        self.task = asyncio.create_task(self.show())
         logger.debug(f"The show must go on. Let's {self.name}")
 
     async def stop(self):
         """Stops the show"""
-        logger.debug(f"stop()")
+        logger.debug(f"{__class__.__name__} stop()")
+        self.running = False
         if self.task:
             self.task.cancel()
             try:
                 await self.task
             except asyncio.CancelledError:
                 logger.debug(f"The {self.name} show was hard cancelled")
+        colour = Colour(0, 0, 0)
+        for s in self.strips:
+            s.off()
         await self.showHasFinished()
         logger.debug(f"The {self.name} show is over")
 
