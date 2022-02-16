@@ -168,6 +168,7 @@ class MusicScroll(MusicShow):
             y = self.mic.audiodata
             if y is None:
                 await asyncio.sleep(0.1)
+                yield True
                 continue
             y = self.to_mel(y)
             y = y**2.0
@@ -209,6 +210,7 @@ class MusicEnergy(MusicShow):
             y = self.mic.audiodata
             if y is None:
                 await asyncio.sleep(0.1)
+                yield True
                 continue
             y = self.to_mel(y)
             y = np.copy(y)
@@ -262,6 +264,7 @@ class MusicSpectrum(MusicShow):
             y = self.mic.audiodata
             if y is None:
                 await asyncio.sleep(0.1)
+                yield True
                 continue
             y = self.to_mel(y)
             y = np.copy(interpolate(y, self.numPixels // 2))
