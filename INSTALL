@@ -72,3 +72,39 @@ sudo loginctl enable-linger pi
 systemctl --user daemon-reload
 systemctl --user enable lamp.service
 systemctl --user start lamp.service
+
+
+
+. ~/venv-mqtt/bin/activate
+
+python mqtt_publish.py --noretain named/control/lamp/Test/state on
+python mqtt_publish.py --noretain named/control/lamp/Test '{
+         "strips": {
+          "left": {
+            "pixels": 14
+            "painter" : {
+                "name": "RainbowChase",
+            },
+            "music_painter" : {
+                "name": "MusicEnergy",
+            },
+         }}}'
+,
+         ...
+        {
+         state: on
+         brightness: 0-255
+         pixels: <n>
+         strips: {
+          <strip>: {
+            pixels: <n>
+            painter : {
+                name: "",
+                key: "val"...
+            },
+            music_painter : {
+                name: "",
+                key: "val"...
+            },
+         },
+         ...
