@@ -47,12 +47,26 @@ class Microphone:
 
     def start_stream(self):
         logger.debug(f"Opening stream for {self}")
-        self.stream = self.p.open(format=pyaudio.paInt16,
-                                  input_device_index=1,
-                                  channels=1,
-                                  rate=config.MIC_RATE,
-                                  input=True,
-                                  frames_per_buffer=self.frames_per_buffer)
+        while not self.stream:
+            try:
+                p = pyaudio.PyAudio()
+                # look for the Loopback device with 1 channel
+                index = 1  # Fallback if we can't find anything
+                for i in range(p.get_device_count()):
+                    dev = p.get_device_info_by_index(i)
+                    print((i, dev['name'],dev['maxInputChannels']))
+                    if dev['name'].startswith("Loopback") and dev['maxInputChannels'] == 1:
+                        print(("found ", i, dev['name'],dev['maxInputChannels']))
+                        index = i
+                        break
+                self.stream = self.p.open(format=pyaudio.paInt16,
+                                          input_device_index=index,
+                                          channels=1,
+                                          rate=config.MIC_RATE,
+                                          input=True,
+                                          frames_per_buffer=self.frames_per_buffer)
+            except OSError as e:
+                logger.debug(f"Error opening stream {e}")
 
         loop = asyncio.get_event_loop()
         self.task = loop.run_in_executor(None, self._start_stream)
