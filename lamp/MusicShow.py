@@ -81,7 +81,7 @@ class MusicShow(StripShow):
                                       alpha_decay=0.01, alpha_rise=0.99)
         self.mel_smoothing = dsp.ExpFilter(np.tile(1e-1, config.N_FFT_BINS),
                                            alpha_decay=0.5, alpha_rise=0.99)
-        self.mic = Microphone()
+        self.mic = Microphone(config.MIC_RATE, config.FPS)
 
     def to_mel(self, audio_samples):
         # Thie was microphone_update() in visualization.py
