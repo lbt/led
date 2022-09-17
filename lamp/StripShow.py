@@ -13,13 +13,21 @@ logger = logging.getLogger(__name__)
 class StripShow:
     '''Define various ways to animate LEDs in a SubStrip.
 
-    StripShow manages an internal task which runs show() whilst it has
-    strips.
+    StripShow manages displaying pixels on a number of strips using an
+    internal task.
 
-    show() calls the current painter on each iteration and then calls
-    strip.show() to actually update the strip.
+    StripController has a collection of StripShows which it creates
+    when needed.
 
-    The painter updates the LED values and pauses as needed,
+    Strips are added to the show which causes the internal show() task
+    to start. If all strips are removed the task is stopped.
+
+    Whilst running the internal task runs show() which iterates over
+    the current painter for each frame and then calls strip.show() to
+    actually update the strip(s).
+
+    The paint() method in the subclass updates the LED values and
+    pauses as needed,
 
     Painters have access to the decoded message payload via the
     self.args attribute
@@ -58,6 +66,7 @@ class StripShow:
         if strip in self.strips:
             self.strips.remove(strip)
         l = len(self.strips)
+        logger.debug("%s has %d strips now", self.name, l)
         if not l:
             self.numPixels = 0
             logger.debug(f"{self.name} has no more strips - stopping")
@@ -68,18 +77,27 @@ class StripShow:
     def start(self):
         self.running = True
         self.task = asyncio.create_task(self.show())
-        logger.debug(f"The show must go on. Let's {self.name}")
+        logger.debug(f"The show must go on. Let's {self.name} in {self.task.get_name()}")
 
     async def stop(self):
         """Stops the show"""
-        logger.debug(f"{__class__.__name__} stop()")
+        logger.debug(f"{self.__class__.__name__} stop()")
+        if not self.running:
+            logger.debug(f"{self.__class__.__name__} already stopped/stopping")
+            return
         self.running = False
         if self.task:
-            self.task.cancel()
             try:
-                await self.task
-            except asyncio.CancelledError:
-                logger.debug(f"The {self.name} show was hard cancelled")
+                # Allow the task to exit when self.running is set.
+                await asyncio.wait_for(self.task, 0.1)
+            except asyncio.TimeoutError:
+                # OK, it's bad... the timeout cancelled it
+                try:
+                    # Wait for it to handle and respond to a cancel event
+                    await self.task
+                except asyncio.CancelledError:
+                    # Or just accept it got hard-cancelled
+                    logger.debug(f"The {self.name} show was hard cancelled")
         colour = Colour(0, 0, 0)
         for s in self.strips:
             s.off()
@@ -94,8 +112,18 @@ class StripShow:
                 try:
                     # This may never finish
                     async for _frame in self.paint():
-                        # We only need to render one strip
-                        self.strips[0].show()
+                        try:
+                            # We assume there's only 1 actual strip
+                            # which is split into subsstrips so we
+                            # only need to render one strip. This may
+                            # change if we have multiple real strips
+                            self.strips[0].show()
+                        except IndexError:
+                            # We have had our strips removed !
+                            if self.running:
+                                logger.critical("No strips but still runnning???")
+                            pass
+
                 except asyncio.CancelledError:
                     return
                 except Exception as e:
