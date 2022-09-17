@@ -293,6 +293,15 @@ class StripController:
         This method takes into account the state of the music system so will
         switch from playing to quiet modes too.
         """
+
+        # Note: This assumes that any strip can be added to any
+        # StripShow instance; it can't, an instance only works for a
+        # given number of pixels which is only known when an attempt
+        # is made to add a strip. This in turn means we can't use a
+        # classname_numpixels type key. Maybe just have a list of
+        # instances and see if any accept the strip and if not, make a
+        # new one
+
         striph = self.strips[sname]
         if self.music_playing:
             args = striph.music
@@ -303,37 +312,49 @@ class StripController:
 
         # We need to have been initialised
         if not (args and key):
-            logger.debug("setPainter called but no args/key set")
+            logger.debug("setPainter called for %s but no args/key set",
+                         sname)
             return
 
         try:
             newshow = self.shows[key]
-            logger.debug("setPainter: Found that show")
+            logger.debug("setPainter(%s): key %s: Found show %s",
+                         sname, key, newshow)
         except KeyError:
             try:
                 cls = args["name"]
                 newshow = globals()[cls](self, args)
                 self.shows[key] = newshow
-                logger.debug("setPainter: Created that show")
+                logger.debug("setPainter(%s): Created show %s with key %s",
+                             sname, cls, key)
             except KeyError:
-                logger.debug("setPainter: Np painter class in args")
+                logger.debug("setPainter(%s): Np painter class in args", sname)
                 return
             except NameError:
-                logger.debug(f"setPainter: invalid painter class: {cls}")
+                logger.debug("setPainter(%s): invalid painter class: %s",
+                             sname, cls)
                 return
 
-        if striph.current_show:
-            logger.debug(f"setPainter: Leaving show {striph.current_show}")
-            await striph.current_show.removeStrip(striph.ss)
-            striph.current_show = None
-        # Now everything has stopped we can set the global painter and args
-        logger.debug("setPainter: Joining new show")
-        newshow.addStrip(striph.ss)
-        striph.current_show = newshow
+        if striph.current_show == newshow:
+            logger.debug("setPainter(%s): Already in show %s",
+                         sname, newshow)
+        else:
+            if striph.current_show:
+                logger.debug("setPainter(%s): Leaving show %s",
+                             sname, striph.current_show)
+                await striph.current_show.removeStrip(striph.ss)
+                logger.debug("setPainter(%s): Left show %s",
+                             sname, striph.current_show)
+                striph.current_show = None
+
+            # Now everything has stopped we can set the global painter and args
+            logger.debug("setPainter: Joining new show")
+            newshow.addStrip(striph.ss)
+            striph.current_show = newshow
 
         # self.controller.publish(f"strip/{self.name}/painter",
         #                         self.painter._as_payload())
-    
+
     async def setBrightness(self, b):
         logger.debug(f"Setting brightness to {b}")
         self.strip.setBrightness(b)
