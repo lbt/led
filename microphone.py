@@ -53,13 +53,13 @@ class Microphone:
         with self._c_lock:
             self.stream_stop_playing = False
 
-            if not self.stream_playing_task:
+            if not self.stream_playing_task or self.stream_playing_task.done():
                 logger.debug("Starting stream for %s in a thread", self)
                 loop = asyncio.get_event_loop()
                 self.stream_playing_task = loop.run_in_executor(None, self._run_stream)
             # Add this client
             self.clients[client] = True
-            logger.debug("mic has %s clients", len(self.clients))
+            logger.debug("mic has %s clients after subscribe", len(self.clients))
 
     async def unsubscribe_stream(self, client):
         with self._c_lock:
