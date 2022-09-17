@@ -149,6 +149,8 @@ class MusicShow(StripShow):
 
 
 class MusicScroll(MusicShow):
+    """Effect that originates in the center and scrolls outwards"""
+
     N_FFT_BINS = 16
     """Number of frequency bins to use when transforming audio to frequency domain
 
@@ -166,7 +168,6 @@ class MusicScroll(MusicShow):
 
     """
     async def paint(self):
-        """Effect that originates in the center and scrolls outwards"""
         pixels = np.tile(1.0, (3, self.numPixels // 2))
         logger.debug(f"Frame init {self.numPixels} {pixels} ")
         gain = dsp.ExpFilter(np.tile(0.01, config.N_FFT_BINS),
@@ -201,11 +202,13 @@ class MusicScroll(MusicShow):
             self.setPixelColor(slice(0, len(p)), p)
             yield True
             await asyncio.sleep(0)
+        logger.debug("%s: paint has finished", self.__class__.__name__)
 
 
 class MusicEnergy(MusicShow):
+    """Effect that expands from the center with increasing sound energy"""
+
     async def paint(self):
-        """Effect that expands from the center with increasing sound energy"""
         pixels = np.tile(1.0, (3, self.numPixels // 2))
         logger.debug(f"Frame init {self.numPixels} {pixels} ")
         gain = dsp.ExpFilter(np.tile(0.01, config.N_FFT_BINS),
@@ -252,9 +255,11 @@ class MusicEnergy(MusicShow):
             self.setPixelColor(slice(0, len(p)), p)
             yield True
             await asyncio.sleep(0)
+        logger.debug("%s: paint has finished", self.__class__.__name__)
 
 class MusicSpectrum(MusicShow):
     """Effect that maps the Mel filterbank frequencies onto the LED strip"""
+
     async def paint(self):
         pixels = np.tile(1.0, (3, self.numPixels // 2))
         logger.debug(f"Frame init {self.numPixels} {pixels} ")
@@ -292,6 +297,7 @@ class MusicSpectrum(MusicShow):
             self.setPixelColor(slice(0, len(p)), p)
             yield True
             await asyncio.sleep(0)
+        logger.debug("%s: paint has finished", self.__class__.__name__)
 
     def visualize_sparkle(self, y):
         s = random.randrange(self.numPixels)
