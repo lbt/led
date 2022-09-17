@@ -13,12 +13,12 @@ import config
 logger = logging.getLogger(__name__)
 
 
-
 class Microphone:
     def __init__(self):
         self.p = pyaudio.PyAudio()
         self.frames_per_buffer = int(config.MIC_RATE / config.FPS)
-        logger.debug(f"working on {config.FPS} fps and {self.frames_per_buffer} frames")
+        logger.debug("working on %s fps and %s frames",
+                     config.FPS, self.frames_per_buffer)
         self.stream = None
         # It's written from the run_in_executor Thread and read from
         # the async main thread so it needs locking
@@ -40,34 +40,37 @@ class Microphone:
     def audiodata(self):
         with self._audiodata_lock:
             if self._audiodata is None:
-                logger.debug(f"No frame yet")
+                logger.debug("No frame yet")
                 return None
-            else:
-                c = self._audiodata.copy()
-                return c
+            c = self._audiodata.copy()
+            return c
 
     def start_stream(self):
-        logger.debug(f"Opening stream for {self}")
+        logger.debug("Opening stream for %s", self)
         while not self.stream:
             try:
                 p = pyaudio.PyAudio()
                 # look for the Loopback device with 1 channel
                 index = 1  # Fallback if we can't find anything
+                logger.debug("Scanning audio devices:")
                 for i in range(p.get_device_count()):
                     dev = p.get_device_info_by_index(i)
-                    print((i, dev['name'],dev['maxInputChannels']))
-                    if dev['name'].startswith("Loopback") and dev['maxInputChannels'] == 1:
-                        print(("found ", i, dev['name'],dev['maxInputChannels']))
+                    logger.debug(i, dev['name'], dev['maxInputChannels'])
+                    if (dev['name'].startswith("Loopback") and
+                        dev['maxInputChannels'] == 1):
+                        logger.debug(("found ", i,
+                                      dev['name'], dev['maxInputChannels']))
                         index = i
                         break
-                self.stream = self.p.open(format=pyaudio.paInt16,
-                                          input_device_index=index,
-                                          channels=1,
-                                          rate=config.MIC_RATE,
-                                          input=True,
-                                          frames_per_buffer=self.frames_per_buffer)
+                self.stream = self.p.open(
+                    format=pyaudio.paInt16,
+                    input_device_index=index,
+                    channels=1,
+                    rate=config.MIC_RATE,
+                    input=True,
+                    frames_per_buffer=self.frames_per_buffer)
             except OSError as e:
-                logger.debug(f"Error opening stream {e}")
+                logger.debug("Error opening stream %s", e)
 
         loop = asyncio.get_event_loop()
         self.task = loop.run_in_executor(None, self._start_stream)
@@ -96,17 +99,18 @@ class Microphone:
                 self.stream.stop_stream()
 
     async def close(self):
-        logger.debug(f"Closing mic {self}")
+        logger.debug("Closing mic %s", self)
         if self.task:
-            logger.debug(f"Waiting for thread/task")
+            logger.debug("Waiting for thread/task")
             with self._p_lock:
                 self.exit_stream = True
             await self.task
         if self.stream:
             with self._p_lock:
+                logger.debug("stream not closed on request. Forcing closed.")
                 self.stream.close()
         self.stream = None
-        logger.debug(f"Mic is closed")
+        logger.debug("Mic is closed")
 
     # If we want callback see:
     # https://stackoverflow.com/questions/53993334/converting-a-python-function-with-a-callback-to-an-asyncio-awaitable
