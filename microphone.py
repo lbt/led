@@ -30,8 +30,8 @@ class Microphone:
         # closing because it's likely blocking in the other thread
         self._p_lock = threading.Lock()
 
-        self.task = None
-        self.exit_stream = False
+        self.stream_playing_task = None
+        self.stream_stop_playing = False
 
     def __del__(self):
         logger.debug("Terminating PyAudio")
@@ -47,7 +47,7 @@ class Microphone:
             return c
 
     def start_stream(self):
-        self.exit_stream = False
+        self.stream_stop_playing = False
         while not self.stream:
             logger.debug("No stream available, making one")
             try:
@@ -77,7 +77,7 @@ class Microphone:
 
         logger.debug("Starting stream for %s in a thread", self)
         loop = asyncio.get_event_loop()
-        self.task = loop.run_in_executor(None, self._run_stream)
+        self.stream_playing_task = loop.run_in_executor(None, self._run_stream)
 
     def _run_stream(self):
         while True:
@@ -85,7 +85,7 @@ class Microphone:
                 self.stream.start()
             try:
                 with self._p_lock:
-                    if self.exit_stream:
+                    if self.stream_stop_playing:
                         logger.debug("_run_stream exiting as asked")
                         break
                     frames = self.stream.read(self.frames_per_buffer,
@@ -101,21 +101,18 @@ class Microphone:
 
     def pause_stream(self):
         if self.stream:
-            with self._p_lock:
-                self.stream.stop_stream()
+            self.stream_stop_playing = True
 
     async def close(self):
         logger.debug("Closing mic %s", self)
-        if self.task:
-            logger.debug("Waiting for thread/task")
-            with self._p_lock:
-                self.exit_stream = True
-            await self.task
+        if self.stream_playing_task:
+            logger.debug("Waiting for stream_playing_task thread")
+            self.stream_stop_playing = True
+            await self.stream_playing_task
         if self.stream:
             with self._p_lock:
-                logger.critical("stream not closed on request. Forcing closed.")
                 self.stream.close()
-        self.stream = None
+                self.stream = None
         logger.debug("Mic is closed")
 
     # If we want callback see:
