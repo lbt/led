@@ -138,14 +138,13 @@ class StripController:
             if not self.music_playing:
                 logger.debug(f"Music_playing was {self.music_playing} => True")
                 self.music_playing = True
-                for sname in self.strips.keys():
-                    await self.setPainter(sname)
         else:
             if self.music_playing:
                 logger.debug(f"Music_playing was {self.music_playing} => False")
                 self.music_playing = False
-                for sname in self.strips.keys():
-                    await self.setPainter(sname)
+
+        for sname in self.strips.keys():
+            await self.setPainter(sname)
 
         logger.debug("Music_playing handled")
         return True
