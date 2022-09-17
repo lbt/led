@@ -21,7 +21,8 @@ class Microphone:
                      config.FPS, self.frames_per_buffer)
         self.stream = None
         # It's written from the run_in_executor Thread and read from
-        # the async main thread so it needs locking
+        # the async main thread so it needs locking to avoid reading
+        # whilst it's being written
         self._audiodata = None
         self._audiodata_lock = threading.Lock()
 
@@ -46,20 +47,22 @@ class Microphone:
             return c
 
     def start_stream(self):
-        logger.debug("Opening stream for %s", self)
+        self.exit_stream = False
         while not self.stream:
+            logger.debug("No stream available, making one")
             try:
                 p = pyaudio.PyAudio()
-                # look for the Loopback device with 1 channel
+                # look for the Loopback device with 2 channels
                 index = 1  # Fallback if we can't find anything
                 logger.debug("Scanning audio devices:")
                 for i in range(p.get_device_count()):
                     dev = p.get_device_info_by_index(i)
-                    logger.debug(i, dev['name'], dev['maxInputChannels'])
+                    logger.debug("%d : %s : %s",
+                                  i, dev['name'], dev['maxInputChannels'])
                     if (dev['name'].startswith("Loopback") and
-                        dev['maxInputChannels'] == 1):
-                        logger.debug(("found ", i,
-                                      dev['name'], dev['maxInputChannels']))
+                        dev['maxInputChannels'] == 2):
+                        logger.debug("found %d : %s : %s",
+                                     i, dev['name'], dev['maxInputChannels'])
                         index = i
                         break
                 self.stream = self.p.open(
@@ -72,16 +75,18 @@ class Microphone:
             except OSError as e:
                 logger.debug("Error opening stream %s", e)
 
+        logger.debug("Starting stream for %s in a thread", self)
         loop = asyncio.get_event_loop()
-        self.task = loop.run_in_executor(None, self._start_stream)
+        self.task = loop.run_in_executor(None, self._run_stream)
 
-    def _start_stream(self):
-        self.exit_stream = False
+    def _run_stream(self):
         while True:
+            if self.stream.is_stopped():
+                self.stream.start()
             try:
                 with self._p_lock:
                     if self.exit_stream:
-                        logger.debug("_start_stream exiting as asked")
+                        logger.debug("_run_stream exiting as asked")
                         break
                     frames = self.stream.read(self.frames_per_buffer,
                                               exception_on_overflow=False)
@@ -90,8 +95,9 @@ class Microphone:
                 with self._audiodata_lock:
                     self._audiodata = y
             except IOError:
-                logger.debug("_start_stream exiting due to IOError")
+                logger.debug("_run_stream exiting due to IOError")
                 break
+        self.stream.stop_stream()
 
     def pause_stream(self):
         if self.stream:
@@ -107,7 +113,7 @@ class Microphone:
             await self.task
         if self.stream:
             with self._p_lock:
-                logger.debug("stream not closed on request. Forcing closed.")
+                logger.critical("stream not closed on request. Forcing closed.")
                 self.stream.close()
         self.stream = None
         logger.debug("Mic is closed")
