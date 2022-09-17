@@ -30,6 +30,7 @@ class Microphone:
         self._p_lock = threading.Lock()
 
         self.task = None
+        self.exit_stream = False
 
     def __del__(self):
         logger.debug("Terminating PyAudio")
@@ -72,9 +73,13 @@ class Microphone:
         self.task = loop.run_in_executor(None, self._start_stream)
 
     def _start_stream(self):
+        self.exit_stream = False
         while True:
             try:
                 with self._p_lock:
+                    if self.exit_stream:
+                        logger.debug("_start_stream exiting as asked")
+                        break
                     frames = self.stream.read(self.frames_per_buffer,
                                               exception_on_overflow=False)
 
@@ -83,7 +88,7 @@ class Microphone:
                     self._audiodata = y
             except IOError:
                 logger.debug("_start_stream exiting due to IOError")
-                return
+                break
 
     def pause_stream(self):
         if self.stream:
@@ -92,12 +97,15 @@ class Microphone:
 
     async def close(self):
         logger.debug(f"Closing mic {self}")
+        if self.task:
+            logger.debug(f"Waiting for thread/task")
+            with self._p_lock:
+                self.exit_stream = True
+            await self.task
         if self.stream:
             with self._p_lock:
                 self.stream.close()
-        if self.task:
-            logger.debug(f"Waiting for thread/task")
-            await self.task
+        self.stream = None
         logger.debug(f"Mic is closed")
 
     # If we want callback see:
