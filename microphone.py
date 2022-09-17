@@ -26,8 +26,15 @@ class Microphone:
         # closing because it's likely blocking in the other thread
         self._p_lock = threading.Lock()
 
+        # This is used to lock access to the client list
+        self._c_lock = threading.Lock()
+
         self.stream_playing_task = None
         self.stream_stop_playing = False
+
+        # Keep a record of clients so we can stop the stream if we
+        # have none left
+        self.clients = {}
 
     def __del__(self):
         logger.debug("Terminating PyAudio")
@@ -42,8 +49,55 @@ class Microphone:
             c = self._audiodata.copy()
             return c
 
-    def start_stream(self):
-        self.stream_stop_playing = False
+    async def subscribe_stream(self, client):
+        with self._c_lock:
+            self.stream_stop_playing = False
+
+            if not self.stream_playing_task:
+                logger.debug("Starting stream for %s in a thread", self)
+                loop = asyncio.get_event_loop()
+                self.stream_playing_task = loop.run_in_executor(None, self._run_stream)
+            # Add this client
+            self.clients[client] = True
+            logger.debug("mic has %s clients", len(self.clients))
+
+    async def unsubscribe_stream(self, client):
+        with self._c_lock:
+            # Remove this client
+            try:
+                del self.clients[client]
+            except KeyError:
+                logger.warn("Client already unsubscribed")
+                pass
+            if not self.clients:
+                self.stream_stop_playing = True
+                await self.stream_playing_task
+            logger.debug("mic has %s clients after unsubscribe", len(self.clients))
+
+    def _run_stream(self):
+        self._ensure_stream()
+        if self.stream.is_stopped():
+            self.stream.start_stream()
+        while True:
+            try:
+                with self._p_lock:
+                    if self.stream_stop_playing:
+                        logger.debug("_run_stream exiting as asked")
+                        break
+                    frames = self.stream.read(self.frames_per_buffer,
+                                              exception_on_overflow=False)
+                    # logger.debug("_run_stream frame stop=%s", self.stream_stop_playing)
+
+                y = np.fromstring(frames, dtype=np.int16).astype(np.float32)
+                with self._audiodata_lock:
+                    self._audiodata = y
+            except IOError:
+                logger.debug("_run_stream exiting due to IOError")
+                break
+        self.stream.stop_stream()
+        logger.debug("Thread exiting for %s", self)
+
+    def _ensure_stream(self):
         while not self.stream:
             logger.debug("No stream available, making one")
             try:
@@ -71,33 +125,12 @@ class Microphone:
             except OSError as e:
                 logger.debug("Error opening stream %s", e)
 
-        logger.debug("Starting stream for %s in a thread", self)
-        loop = asyncio.get_event_loop()
-        self.stream_playing_task = loop.run_in_executor(None, self._run_stream)
-
-    def _run_stream(self):
-        while True:
-            if self.stream.is_stopped():
-                self.stream.start()
-            try:
-                with self._p_lock:
-                    if self.stream_stop_playing:
-                        logger.debug("_run_stream exiting as asked")
-                        break
-                    frames = self.stream.read(self.frames_per_buffer,
-                                              exception_on_overflow=False)
-
-                y = np.fromstring(frames, dtype=np.int16).astype(np.float32)
-                with self._audiodata_lock:
-                    self._audiodata = y
-            except IOError:
-                logger.debug("_run_stream exiting due to IOError")
-                break
-        self.stream.stop_stream()
-
-    def pause_stream(self):
+    async def pause_stream(self):
+        logger.debug("Pausing stream for %s in a thread", self)
+        #return
         if self.stream:
             self.stream_stop_playing = True
+            await self.stream_playing_task
 
     async def close(self):
         logger.debug("Closing mic %s", self)

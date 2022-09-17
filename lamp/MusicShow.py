@@ -64,6 +64,11 @@ def interpolate(y, new_length):
 
 
 class MusicShow(StripShow):
+    # Use a class instance of the Microphone This is instantiated by
+    # the first class.  An alternate strategy is to set the
+    # MusicShow.mic as part of setting up the StripController
+    mic = None
+
     def __init__(self, controller, args):
         super().__init__(controller, args)
 
@@ -81,7 +86,10 @@ class MusicShow(StripShow):
                                       alpha_decay=0.01, alpha_rise=0.99)
         self.mel_smoothing = dsp.ExpFilter(np.tile(1e-1, config.N_FFT_BINS),
                                            alpha_decay=0.5, alpha_rise=0.99)
-        self.mic = Microphone(config.MIC_RATE, config.FPS)
+        if not MusicShow.mic:
+            MusicShow.mic = Microphone(config.MIC_RATE, config.FPS)
+        self.mic = MusicShow.mic
+        logger.debug("Made %s", self.mic)
 
     def to_mel(self, audio_samples):
         # Thie was microphone_update() in visualization.py
@@ -136,8 +144,8 @@ class MusicShow(StripShow):
         return np.bitwise_or(np.bitwise_or(r, g), b)
 
     async def showHasFinished(self):
-        logger.debug(f"Closing mic")
-        await self.mic.close()
+        logger.debug("Releasing mic %s client %s", self.mic, self)
+        await self.mic.unsubscribe_stream(self)
 
 
 class MusicScroll(MusicShow):
@@ -163,7 +171,7 @@ class MusicScroll(MusicShow):
         logger.debug(f"Frame init {self.numPixels} {pixels} ")
         gain = dsp.ExpFilter(np.tile(0.01, config.N_FFT_BINS),
                              alpha_decay=0.001, alpha_rise=0.99)
-        self.mic.start_stream()
+        await self.mic.subscribe_stream(self)
         while self.running:
             y = self.mic.audiodata
             if y is None:
@@ -205,7 +213,7 @@ class MusicEnergy(MusicShow):
         p_filt = dsp.ExpFilter(np.tile(1, (3, self.numPixels // 2)),
                                alpha_decay=0.1, alpha_rise=0.99)
 
-        self.mic.start_stream()
+        await self.mic.subscribe_stream(self)
         while self.running:
             y = self.mic.audiodata
             if y is None:
@@ -259,7 +267,7 @@ class MusicSpectrum(MusicShow):
                                alpha_decay=0.05, alpha_rise=0.3)
         b_filt = dsp.ExpFilter(np.tile(0.01, self.numPixels // 2),
                                alpha_decay=0.1, alpha_rise=0.5)
-        self.mic.start_stream()
+        await self.mic.subscribe_stream(self)
         while self.running:
             y = self.mic.audiodata
             if y is None:
