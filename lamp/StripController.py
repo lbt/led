@@ -16,8 +16,10 @@ class HStrip:
     def __init__(self, name, strip, config):
         self.name = name
         self.strip = strip
-        self.ss = strip.createPixelSubStrip(config[name]["first_pixel"],
-                                            num=config[name]["num_pixels"])
+        self.first_pixel = config[name]["first_pixel"]
+        self.num_pixels = config[name]["num_pixels"]
+        self.ss = strip.createPixelSubStrip(self.first_pixel,
+                                            num=self.num_pixels)
         # We store the config and hash of each config
         self._quiet = None
         self.quiet_h = None
@@ -134,13 +136,13 @@ class StripController:
 
         if state == "play":
             if not self.music_playing:
-                logger.debug(f"Music_playing => {self.music_playing}")
+                logger.debug(f"Music_playing was {self.music_playing} => True")
                 self.music_playing = True
                 for sname in self.strips.keys():
                     await self.setPainter(sname)
         else:
             if self.music_playing:
-                logger.debug(f"Music_playing => {self.music_playing}")
+                logger.debug(f"Music_playing was {self.music_playing} => False")
                 self.music_playing = False
                 for sname in self.strips.keys():
                     await self.setPainter(sname)
@@ -162,7 +164,8 @@ class StripController:
          brightness: 0-255
          pixels: <n>
          strips: {
-          <strip>: {
+          <strip_name>: {
+            first_pixel: <n>
             pixels: <n>
             painter : {
                 name: "",
@@ -172,7 +175,7 @@ class StripController:
                 name: "",
                 key: "val"...
             },
-         },
+         ],
          ...
         }
         # named/control/lamp/{NAME}/strip/{NAME}/mirror/{NAME2}
@@ -191,22 +194,39 @@ class StripController:
             logger.debug(f"Message is for {name}, not me {self.name}")
             return False
 
-        if len(topics) > 1:
-            attr = topics[1]
-            if attr in ["brightness", "state"]:
-                # named/control/lamp/{NAME}/<attr> (brightness or state)
-                val = rawpayload.decode("utf-8") or "None"
-                payload = {attr: val}
-            else:
-                logger.debug(f"Unknown attribute {attr}")
-                return False
-        else:
-            # named/control/lamp/{NAME}
-            try:
+        # Handle an incoming .../<name>/strip/<strip>|all/painter msg
+        # by creating one or more
+        #   { "strips": { "<strip>": { <payload> }}}
+        try:
+            if len(topics) == 5:  # <NAME>/strip/<sname>/<painter|music_painter>/arg
+                payload = {"strips":
+                           {topics[2]:
+                            {topics[3]:
+                             {topics[4]: rawpayload.decode("utf-8")}}}}
+            elif len(topics) == 4:   # <NAME>/strip/<sname>/<painter|music_painter>
+                payload = {"strips":
+                           {topics[2]:
+                            {topics[3]:
+                             json.loads(rawpayload.decode("utf-8") or "null")}}}
+            elif len(topics) == 3:   # <NAME>/strip/<sname>
+                payload = {"strips":
+                           {topics[2]:
+                            json.loads(rawpayload.decode("utf-8") or "null")}}
+            elif len(topics) == 2:    # <NAME>/<attr>
+                attr = topics[1]
+                if attr in ["brightness", "state"]:
+                    # named/control/lamp/{NAME}/<attr> (brightness or state)
+                    val = rawpayload.decode("utf-8") or "None"
+                    payload = {attr: val}
+                else:
+                    logger.debug(f"Unknown attribute {attr}")
+                    return False
+            elif len(topics) == 1:  # {NAME}
                 payload = json.loads(rawpayload.decode("utf-8") or "null")
-            except JSONDecodeError:
-                logger.warning("Error decoding payload")
-                return False
+            logger.debug(f"Converted to {payload}")
+        except json.JSONDecodeError:
+            logger.warning("Error decoding 'strip' payload")
+            return False
 
         # payload is now a dict of things to do
         if "state" in payload:
@@ -218,6 +238,8 @@ class StripController:
         if "strips" in payload:
             strips = payload["strips"]
             for sname, info in strips.items():
+                if "pixels" in info:
+                    logger.warning(f"Trying to create substrip with {info['pixels']} pixels. Not yet implemented")
                 if sname != "all" and sname not in self.strips:
                     logger.warning(f"Strip {sname} not found in lamp {name}")
                     return True
@@ -242,23 +264,35 @@ class StripController:
         # validate here
         music = args.get("music_painter", None)
         try:
-            quiet = args["painter"]
+            quiet = args.get("painter", None)
             # validate the cls here
         except (TypeError, KeyError):
             logger.debug("No 'painter' found in payload")
             return
 
-        logger.debug(f"music: {music}")
-        self.strips[sname].music = music
-        logger.debug(f"quiet: {quiet}")
-        self.strips[sname].quiet = quiet
+        # validate the json. Ideally call the painter
+        if music:
+            if "name" not in music:
+                logger.warning(f"Invalid json: {music}")
+                music = None
+        if quiet:
+            if "name" not in quiet:
+                logger.warning(f"Invalid json: {quiet}")
+                quiet = None
+        if music:
+            logger.debug(f"music: {music}")
+            self.strips[sname].music = music
+        if quiet:
+            logger.debug(f"quiet: {quiet}")
+            self.strips[sname].quiet = quiet
         await self.setPainter(sname)
 
     async def setPainter(self, sname):
         """Look at the HStrip for sname and decide what show it wants. Then
         Look in the shows to see if that one is running. If so, add it
-        otherwise create and add it
-
+        otherwise create and add it.
+        This method takes into account the state of the music system so will
+        switch from playing to quiet modes too.
         """
         striph = self.strips[sname]
         if self.music_playing:
@@ -270,6 +304,7 @@ class StripController:
 
         # We need to have been initialised
         if not (args and key):
+            logger.debug("setPainter called but no args/key set")
             return
 
         try:
@@ -321,18 +356,23 @@ class StripController:
         """Publish our state
         """
 
-        strip_data = {}
+        strips = {}
         for strip in self.strips.values():
-            strip_data["pixels"] = strip.ss.numPixels(),
+            strip_data = {}
+            strip_data["first_pixel"] = strip.first_pixel
+            strip_data["pixels"] = strip.ss.numPixels()
             strip_data["painter"] = strip.quiet
             if strip.music:
                 strip_data["music_painter"] = strip.music
+            strips[strip.name] = strip_data
+
+
 
         payload = {
             "brightness": self.strip.getBrightness(),
             "state": "ON" if self._state else "OFF",
             "pixels": self.strip.numPixels(),
-            "strips": strip_data
+            "strips": strips
             }
 
         msg = json.dumps(payload, sort_keys=True).encode()
