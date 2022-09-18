@@ -94,6 +94,8 @@ class StripController:
         self.mqctrl = mqctrl
         mqctrl.add_handler(self.msg_handler)
         mqctrl.subscribe(f"named/control/lamp/{self.name}/#")
+        self.initialised = False
+        mqctrl.subscribe(f"named/sensor/lamp/{self.name}/#")
         mqctrl.subscribe("mpd/pine/player")
         mqctrl.add_cleanup_callback(self.cleanup)
         self.strips = {}
@@ -183,8 +185,19 @@ class StripController:
         logger.debug(f"Handler got msg {topic}")
         if topic == "mpd/pine/player":
             return await self.msg_mpd_handler(topic, rawpayload)
-        if not topic.startswith("named/control/lamp"):
-            return False
+        # Subscribe to our own published state and use it to restore
+        # 'last known' state but only once.
+        # Doing it this way slightly optimises the check
+        if topic.startswith(f"named/control/lamp/{self.name}"):
+             if not self.initialised:  # Ignore until initialised
+                 return True
+        if topic.startswith(f"named/sensor/lamp/{self.name}"):
+             if self.initialised:  # Ignore once initialised
+                 return True
+             # now fall through and use the sensor/ payload
+             self.initialised = True
+             logger.debug("Using last published value to initialise\n%s",
+                          rawpayload.decode("utf-8"))
         logger.debug(f"rawpayload {rawpayload}")
         topics = topic.split("/")[3:]
         name = topics[0]
@@ -228,6 +241,8 @@ class StripController:
             return False
 
         # payload is now a dict of things to do
+        if "initialise" in payload:
+            self.initialised = True
         if "state" in payload:
             await self.setState(payload["state"])
         if "brightness" in payload:
@@ -375,6 +390,11 @@ class StripController:
     def publishState(self):
         """Publish our state
         """
+        # Publishing our state before being initialised is not good.
+        # However there is a catch-22. If there is no retained state
+        # then initialising will never happen.
+        if not self.initialised:
+            return
 
         strips = {}
         for strip in self.strips.values():
