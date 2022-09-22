@@ -14,9 +14,7 @@ import config
 logger = logging.getLogger(__name__)
 
 ################################################################
-# Painter Classes
-
-
+# Helper functions
 def memoize(function):
     """Provides a decorator for memoizing functions"""
     from functools import wraps
@@ -63,6 +61,8 @@ def interpolate(y, new_length):
     return z
 
 
+################################################################
+# Painter Super Class for Music
 class MusicShow(StripShow):
     # Use a class instance of the Microphone This is instantiated by
     # the first class.  An alternate strategy is to set the
@@ -71,9 +71,6 @@ class MusicShow(StripShow):
 
     def __init__(self, controller, args):
         super().__init__(controller, args)
-
-        self._gamma = np.load(config.GAMMA_TABLE_PATH)
-        """Gamma lookup table used for nonlinear brightness correction"""
 
         # Number of audio samples to read every time frame
         self.samples_per_frame = int(config.MIC_RATE / config.FPS)
@@ -128,26 +125,13 @@ class MusicShow(StripShow):
             # self.pixels = output
             # return self.update()
 
-    def prepare_for_strip(self, pixels):
-        # Truncate values and cast to integer
-        pixels = np.clip(pixels, 0, 255).astype(int)
-        # Optional gamma correction
-        # Note: is the p value here is related to p in the Effects class?
-        if config.SOFTWARE_GAMMA_CORRECTION:
-            p = self._gamma[pixels]
-        else:
-            p = pixels
-        # Encode 24-bit LED values in 32 bit integers
-        r = np.left_shift(p[0][:].astype(int), 8)
-        g = np.left_shift(p[1][:].astype(int), 16)
-        b = p[2][:].astype(int)
-        return np.bitwise_or(np.bitwise_or(r, g), b)
-
     async def showHasFinished(self):
         logger.debug("Releasing mic %s client %s", self.mic, self)
         await self.mic.unsubscribe_stream(self)
 
 
+################################################################
+# Painter Classes
 class MusicScroll(MusicShow):
     """Effect that originates in the center and scrolls outwards"""
 
@@ -298,25 +282,3 @@ class MusicSpectrum(MusicShow):
             yield True
             await asyncio.sleep(0)
         logger.debug("%s: paint has finished", self.__class__.__name__)
-
-    def visualize_sparkle(self, y):
-        s = random.randrange(self.numPixels)
-        # print(s)
-        pixels *= 0.3
-
-        pixels[0, s-1:s] = 255
-        pixels[1, s-1:s] = 255
-        pixels[2, s-1:s] = 255
-
-        return pixels
-
-    def visualize_sparkle_colour(self, y):
-        s = random.randrange(self.numPixels)
-        # print(s)
-        pixels *= 0.8
-
-        pixels[0, s-1:s] = random.randrange(255)
-        pixels[1, s-1:s] = random.randrange(255)
-        pixels[2, s-1:s] = random.randrange(255)
-
-        return pixels

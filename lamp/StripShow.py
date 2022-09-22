@@ -7,6 +7,8 @@ import itertools
 import asyncio
 import json
 import logging
+import numpy as np
+import config
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +45,9 @@ class StripShow:
         self.task = None
         self.args = args
         self.numPixels = 0
+        self._gamma = np.load(config.GAMMA_TABLE_PATH)
+        """Gamma lookup table used for nonlinear brightness correction"""
+
 
     def _as_payload(self):
         return json.dumps(self.args, separators=(',', ':')).encode("utf-8")
@@ -147,6 +152,21 @@ class StripShow:
         Colour()"""
         return Colour(*(
             [int(c * 255) for c in colorsys.hsv_to_rgb(h/255, 1, 1)]))
+
+    def prepare_for_strip(self, pixels):
+        # Truncate values and cast to integer
+        pixels = np.clip(pixels, 0, 255).astype(int)
+        # Optional gamma correction
+        # Note: is the p value here is related to p in the Effects class?
+        if config.SOFTWARE_GAMMA_CORRECTION:
+            p = self._gamma[pixels]
+        else:
+            p = pixels
+        # Encode 24-bit LED values in 32 bit integers
+        r = np.left_shift(p[0][:].astype(int), 8)
+        g = np.left_shift(p[1][:].astype(int), 16)
+        b = p[2][:].astype(int)
+        return np.bitwise_or(np.bitwise_or(r, g), b)
 
 
 ################################################################
