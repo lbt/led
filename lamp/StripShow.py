@@ -291,3 +291,92 @@ class RainbowChase(StripShow):
                 self.setPixelColor(i, self.hue_to_rgb((t + h * reverse) % 255))
             await asyncio.sleep(1/60)
             yield True
+
+class Sparkle(StripShow):
+    """Sparkles"""
+
+    async def paint(self):
+        import random
+
+        colour = self.args.get("colour",
+                               #[255, 0, 0]  # Green
+                               #[0, 255, 0]  # Red
+                               #[0, 0, 255]  # Blue
+                               "random"
+                               #[255, 255, 255]
+        )
+        if colour == "random":
+            colour = None
+        else:
+            colour = np.array(colour)/255
+        # smoothness is the power of the slope used to fade in and out
+        # if smoothness is zero the pixels appear suddenly and just
+        # fade using decay.
+        smoothness = self.args.get("smoothness", 1.0)
+        # Decay is subtracted if smoothness == 0 otherwise it's a multiplier
+        decay = self.args.get("decay", 0.01)
+        delay = self.args.get("delay", 0)
+
+        # make a 3xN array filled with 1.0
+        sparkles = np.tile(0.0, (3, self.numPixels))
+        logger.debug(f"Frame init {self.numPixels} {sparkles} ")
+        while self.running:
+
+            # Which pixel to glow
+            pixel = random.randint(0, self.numPixels-1)
+            val = sparkles[:, pixel]  # is it doing anything?
+            if val[0] or val[1] or val[2]: # val.any() doesn't
+                                           # short-circuit
+                pass  # Pixel already lit
+            else:
+                if colour is not None:
+                    sparkles[:, pixel] = colour
+                else:
+                    sparkles[:, pixel] = np.array([
+                        random.random(),
+                        random.random(),
+                        random.random(),
+                    ])
+
+            if smoothness:
+                # Convert from 0.0 -> 1.0 to 0.0 -> 1.0 -> 0.0
+                pixels = (np.power(1 - np.fabs(sparkles + -0.5) * 2,
+                                   smoothness)
+                          * 255)
+            else:
+                pixels = sparkles * 255
+
+            p = self.prepare_for_strip(pixels)
+            self.setPixelColor(slice(0, len(p)), p)
+            yield True
+
+            # Now make the sparkles fade a bit for next time
+            if smoothness:
+                sparkles = np.fmax(sparkles - decay, 0.0)
+            else:
+                sparkles = sparkles * decay
+
+            await asyncio.sleep(delay)
+        logger.debug("%s: paint has finished", self.__class__.__name__)
+
+    def visualize_sparkle(self, y):
+        s = random.randrange(self.numPixels)
+        # print(s)
+        pixels *= 0.3
+
+        pixels[0, s-1:s] = 255
+        pixels[1, s-1:s] = 255
+        pixels[2, s-1:s] = 255
+
+        return pixels
+
+    def visualize_sparkle_colour(self, y):
+        s = random.randrange(self.numPixels)
+        # print(s)
+        pixels *= 0.8
+
+        pixels[0, s-1:s] = random.randrange(255)
+        pixels[1, s-1:s] = random.randrange(255)
+        pixels[2, s-1:s] = random.randrange(255)
+
+        return pixels
