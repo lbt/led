@@ -24,9 +24,11 @@ sudo apt install python3-venv python3-pip
 python3 -mvenv ~/venv-leds
 . ~/venv-leds/bin/activate
 pip install scipy==1.6.3
-pip install -e /everything/devel/raspi/sensor2mqtt/
-pip install -e /everything/devel/raspi/led/rpi-ws281x-python/library
-pip install -e /everything/devel/raspi/led/
+pip install /everything/devel/raspi/sensor2mqtt/
+pip install /everything/devel/raspi/led/rpi-ws281x-python/library
+pip install /everything/devel/raspi/led/
+
+(use pip install -e to run development versions of the above)
 
 # Enable sound
 echo snd-aloop | sudo tee -a /etc/modules-load.d/snd-aloop.conf
