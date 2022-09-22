@@ -6,7 +6,7 @@ StartLimitIntervalSec=10
 
 [Service]
 WorkingDirectory=/home/pi
-ExecStart=/home/pi/venv-dancy/bin/python3 /everything/devel/raspi/led/lamp.py
+ExecStart=/home/pi/venv-leds/bin/python3 /everything/devel/raspi/led/lamp.py
 ExecReload=/bin/kill -HUP
 KillMode=process
 Restart=on-failure
