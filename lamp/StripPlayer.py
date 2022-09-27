@@ -58,6 +58,10 @@ class StripPlayer:
         self.music_playing = False
         self._state = True
 
+    async def run(self):
+        await self.mqctrl.run()
+        self.exit()
+
     async def cleanup(self):
         for show in self.shows.values():
             logger.debug(f"stopping show {show}")

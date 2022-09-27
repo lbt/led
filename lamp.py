@@ -58,8 +58,6 @@ async def main():
 
     mqtt_controller = MQController(config)
     strip_player = StripPlayer(mqtt_controller, strip, config["strips"])
-    #asyncio.create_task(strip_controller.run())
-    await mqtt_controller.run()
-    strip_player.exit()
+    await strip_player.run()
 
 asyncio.run(main(), debug=True)
