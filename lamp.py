@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 import asyncio
-import toml
-import os
-import signal
 import logging
-import socket
+import toml
+from sensor2mqtt import MQController
 
-from lamp.LampController import LampController
-from lamp.StripController import StripController
+from lamp.StripPlayer import StripPlayer
 from rpi_ws281x import PixelStrip
 
-import logging
 logger = logging.getLogger(__name__)
+
 
 class myFormatter(logging.Formatter):
     def __init__(self, fmt):
@@ -29,6 +26,7 @@ class myFormatter(logging.Formatter):
             res = res.replace("(task_id)", n)
 
         return res
+
 
 async def main():
     #asyncio.get_running_loop().set_exception_handler(handle_exception)
@@ -50,7 +48,7 @@ async def main():
     for l in modules:
         logging.getLogger(l).addHandler(ch)
         logging.getLogger(l).setLevel(lvl)
-    logger.debug(f"Config file loaded:\n{config}")
+    logger.debug("Config file loaded:\n%s", config)
 
     strip = PixelStrip(config["led_count"], config["led_pin"],
                        config["led_freq_hz"], config["led_dma"],
@@ -58,10 +56,10 @@ async def main():
                        config["led_channel"])
     strip.begin()
 
-    lamp = LampController(config)
-    strip_controller = StripController(lamp, strip, config["strips"])
+    mqtt_controller = MQController(config)
+    strip_player = StripPlayer(mqtt_controller, strip, config["strips"])
     #asyncio.create_task(strip_controller.run())
-    await lamp.run()
-    strip_controller.exit()
+    await mqtt_controller.run()
+    strip_player.exit()
 
 asyncio.run(main(), debug=True)

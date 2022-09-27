@@ -1,66 +1,14 @@
-import asyncio
-import hashlib
 import json
 import logging
-from typing import Dict, Any
 
 from .StripShow import *
+from .StripState import StripState
 from .MusicShow import *
 
 logger = logging.getLogger(__name__)
 
-class HStrip:
-    """Helper class that encapsulates the Strip state
-    """
 
-    def __init__(self, name, strip, config):
-        self.name = name
-        self.strip = strip
-        self.first_pixel = config[name]["first_pixel"]
-        self.num_pixels = config[name]["num_pixels"]
-        self.ss = strip.createPixelSubStrip(self.first_pixel,
-                                            num=self.num_pixels)
-        # We store the config and hash of each config
-        self._quiet = None
-        self.quiet_h = None
-        self._music = None
-        self.music_h = None
-        self.current_show = None
-
-    @property
-    def quiet(self):
-        return self._quiet
-
-    @quiet.setter
-    def quiet(self, val):
-        assert val is not None
-        self._quiet = val
-        self.quiet_h = self.dict_hash(val)
-
-    @property
-    def music(self):
-        return self._music
-
-    @music.setter
-    def music(self, val):
-        self._music = val
-        if val is not None:
-            self.music_h = self.dict_hash(val)
-        else:
-            self.music_h = None
-
-    # https://www.doc.ic.ac.uk/~nuric/coding/how-to-hash-a-dictionary-in-python.html
-    def dict_hash(self, dictionary: Dict[str, Any]) -> str:
-        """MD5 hash of a dictionary."""
-        dhash = hashlib.md5()
-        # We need to sort arguments so {'a': 1, 'b': 2} is
-        # the same as {'b': 2, 'a': 1}
-        encoded = json.dumps(dictionary, sort_keys=True).encode()
-        dhash.update(encoded)
-        return dhash.hexdigest()
-
-
-class StripController:
+class StripPlayer:
     """Paints (Sub)Strips of LEDS controlled by MQTT messages.
 
     A Strip of LEDs can be split into named SubStrips and each can be
@@ -78,7 +26,7 @@ class StripController:
     When an MQTT message arrives it stops the current StripShow and
     starts a new one.
 
-    The StripController has a number of substrips each of which has an
+    The StripPlayer has a number of substrips each of which has an
     associated StripShow. A StripShow can control one or more strips
     so the same show can be present multiple times.
     Equally multiple instances of the same show can be present on
@@ -104,7 +52,7 @@ class StripController:
         self.shows = {}
         for sname in config.keys():
             if isinstance(config[sname], dict):
-                self.strips[sname] = HStrip(sname, strip, config)
+                self.strips[sname] = StripState(sname, strip, config)
         logger.debug(f"strips {self.strips}")
         self.effects = []
         self.music_playing = False
@@ -302,11 +250,13 @@ class StripController:
         await self.setPainter(sname)
 
     async def setPainter(self, sname):
-        """Look at the HStrip for sname and decide what show it wants. Then
-        Look in the shows to see if that one is running. If so, add it
-        otherwise create and add it.
-        This method takes into account the state of the music system so will
-        switch from playing to quiet modes too.
+        """Look at the StripState for sname and decide what show it
+        wants. Then Look in the shows to see if that one is
+        running. If so, add it otherwise create and add it.
+
+        This method takes into account the state of the music system
+        so will switch from playing to quiet modes too.
+
         """
 
         # Note: This assumes that any strip can be added to any
