@@ -38,13 +38,14 @@ class StripPlayer:
     def __init__(self, mqctrl, strip, config):
         """"""
         self.name = config['name']
+        self.mpd_host = config.get('mpd_host', "mpd")
         self.strip = strip
         self.mqctrl = mqctrl
         mqctrl.add_handler(self.msg_handler)
         mqctrl.subscribe(f"named/control/lamp/{self.name}/#")
         self.initialised = False
         mqctrl.subscribe(f"named/sensor/lamp/{self.name}/#")
-        mqctrl.subscribe("mpd/pine/player")
+        mqctrl.subscribe(f"mpd/{self.mpd_host}/player")
         mqctrl.add_cleanup_callback(self.cleanup)
         self.strips = {}
         # shows contains the actual running show Class instance keyed
@@ -135,7 +136,7 @@ class StripPlayer:
 
         """
         logger.debug(f"Handler got msg {topic}")
-        if topic == "mpd/pine/player":
+        if topic == f"mpd/{self.mpd_host}/player":
             return await self.msg_mpd_handler(topic, rawpayload)
         # Subscribe to our own published state and use it to restore
         # 'last known' state but only once.
