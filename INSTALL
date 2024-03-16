@@ -8,7 +8,7 @@ sudo apt install sysfsutils
 
 # All together is
 sudo apt update
-sudo apt install libatlas3-base libgfortran5 libportaudio2 sysfsutils python3-venv python3-pip
+sudo apt install libatlas3-base libgfortran5 libportaudio2 sysfsutils python3-venv python3-pip gfortran
 
 # Listen to audio via snapcast
 sudo dpkg -i /everything/devel/snapcasts/debs2/snapclient_0.25.0-1_armhf.deb
